@@ -4,449 +4,184 @@ Loads configuration from environment variables with full validation.
 """
 
 from typing import List, Optional, Dict
-from pydantic import Field, field_validator, computed_field
+from pydantic import Field, field_validator, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import json
 
 
 class Settings(BaseSettings):
-    """
-    Application settings loaded from environment variables.
-    Uses .env file for local development.
-    """
+    """Application settings loaded from environment variables."""
     
     # ==================== APPLICATION ====================
-    ENVIRONMENT: str = Field(
-        default="development",
-        description="Application environment: development, staging, production"
-    )
-    DEBUG: bool = Field(
-        default=False,
-        description="Enable debug mode"
-    )
-    APP_NAME: str = Field(
-        default="CampusVoice",
-        description="Application name"
-    )
-    HOST: str = Field(
-        default="0.0.0.0",
-        description="Server host address"
-    )
-    PORT: int = Field(
-        default=8000,
-        ge=1000,
-        le=65535,
-        description="Server port"
-    )
-    WORKERS: int = Field(
-        default=4,
-        ge=1,
-        description="Number of worker processes"
-    )
+    ENVIRONMENT: str = Field(default="development", description="Application environment")
+    DEBUG: bool = Field(default=False, description="Enable debug mode")
+    APP_NAME: str = Field(default="CampusVoice", description="Application name")
+    HOST: str = Field(default="0.0.0.0", description="Server host")
+    PORT: int = Field(default=8000, ge=1000, le=65535, description="Server port")
+    WORKERS: int = Field(default=4, ge=1, description="Number of workers")
     
     # ==================== DATABASE ====================
-    DATABASE_URL: str = Field(
-        ...,
-        description="PostgreSQL connection string (asyncpg format)"
-    )
-    DB_ECHO: bool = Field(
-        default=False,
-        description="Echo SQL queries to console"
-    )
-    DB_POOL_SIZE: int = Field(
-        default=20,
-        ge=1,
-        description="Database connection pool size"
-    )
-    DB_MAX_OVERFLOW: int = Field(
-        default=10,
-        ge=0,
-        description="Maximum overflow connections"
-    )
-    DB_POOL_TIMEOUT: int = Field(
-        default=30,
-        ge=1,
-        description="Pool timeout in seconds"
-    )
-    DB_POOL_RECYCLE: int = Field(
-        default=3600,
-        ge=300,
-        description="Pool recycle time in seconds"
-    )
+    DATABASE_URL: str = Field(..., description="PostgreSQL connection string (asyncpg)")
+    DB_ECHO: bool = Field(default=False, description="Echo SQL queries")
+    DB_POOL_SIZE: int = Field(default=20, ge=1, description="Connection pool size")
+    DB_MAX_OVERFLOW: int = Field(default=10, ge=0, description="Max overflow connections")
+    DB_POOL_TIMEOUT: int = Field(default=30, ge=1, description="Pool timeout (seconds)")
+    DB_POOL_RECYCLE: int = Field(default=3600, ge=300, description="Pool recycle time")
     
     # ==================== JWT & SECURITY ====================
-    JWT_SECRET_KEY: str = Field(
-        ...,
-        min_length=32,
-        description="Secret key for JWT token signing (min 32 chars)"
-    )
-    JWT_ALGORITHM: str = Field(
-        default="HS256",
-        description="JWT signing algorithm"
-    )
-    JWT_EXPIRATION_DAYS: int = Field(
-        default=7,
-        ge=1,
-        description="JWT token expiration in days"
-    )
-    PASSWORD_MIN_LENGTH: int = Field(
-        default=8,
-        ge=6,
-        description="Minimum password length"
-    )
+    JWT_SECRET_KEY: str = Field(..., min_length=32, description="JWT secret key")
+    JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
+    JWT_EXPIRATION_DAYS: int = Field(default=7, ge=1, description="Token expiration (days)")
+    PASSWORD_MIN_LENGTH: int = Field(default=8, ge=6, description="Min password length")
     
     # ==================== GROQ LLM ====================
-    GROQ_API_KEY: str = Field(
-        ...,
-        description="Groq API key for LLM operations"
+    GROQ_API_KEY: str = Field(..., description="Groq API key")
+    LLM_MODEL: str = Field(default="llama-3.1-8b-instant", description="Primary LLM model")
+    LLM_FALLBACK_MODEL: Optional[str] = Field(
+        default="mixtral-8x7b-32768",
+        description="Fallback LLM model"
     )
-    LLM_MODEL: str = Field(
-        default="llama-3.1-8b-instant",
-        description="Primary LLM model to use"
-    )
-    LLM_TEMPERATURE: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=2.0,
-        description="LLM temperature for generation"
-    )
-    LLM_MAX_TOKENS: int = Field(
-        default=500,
-        ge=50,
-        le=4000,
-        description="Maximum tokens per LLM response"
-    )
-    LLM_TIMEOUT: int = Field(
-        default=30,
-        ge=5,
-        description="LLM request timeout in seconds"
-    )
-    LLM_MAX_RETRIES: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum retry attempts for LLM requests"
-    )
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI fallback key")
+    LLM_TEMPERATURE: float = Field(default=0.3, ge=0.0, le=2.0, description="LLM temperature")
+    LLM_MAX_TOKENS: int = Field(default=500, ge=50, le=4000, description="Max tokens")
+    LLM_TIMEOUT: int = Field(default=30, ge=5, description="LLM timeout (seconds)")
+    LLM_MAX_RETRIES: int = Field(default=3, ge=1, le=10, description="Max retry attempts")
     
     # ==================== CORS ====================
-    CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000"],
-        description="Allowed CORS origins"
-    )
-    CORS_ALLOW_CREDENTIALS: bool = Field(
-        default=True,
-        description="Allow credentials in CORS"
-    )
+    CORS_ORIGINS: List[str] = Field(default=["http://localhost:3000"], description="CORS origins")
+    CORS_ALLOW_CREDENTIALS: bool = Field(default=True, description="Allow credentials")
     CORS_ALLOW_METHODS: List[str] = Field(
         default=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        description="Allowed HTTP methods"
+        description="Allowed methods"
     )
-    CORS_ALLOW_HEADERS: List[str] = Field(
-        default=["*"],
-        description="Allowed HTTP headers"
-    )
+    CORS_ALLOW_HEADERS: List[str] = Field(default=["*"], description="Allowed headers")
     
     # ==================== RATE LIMITING ====================
-    RATE_LIMIT_ENABLED: bool = Field(
-        default=True,
-        description="Enable rate limiting"
-    )
+    RATE_LIMIT_ENABLED: bool = Field(default=True, description="Enable rate limiting")
     RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY: int = Field(
-        default=5,
-        ge=1,
-        description="Max complaints per student per day"
+        default=5, ge=1, description="Max complaints/day"
     )
     RATE_LIMIT_STUDENT_API_PER_HOUR: int = Field(
-        default=100,
-        ge=10,
-        description="Max API calls per student per hour"
+        default=100, ge=10, description="Student API calls/hour"
     )
     RATE_LIMIT_AUTHORITY_API_PER_HOUR: int = Field(
-        default=500,
-        ge=100,
-        description="Max API calls per authority per hour"
+        default=500, ge=100, description="Authority API calls/hour"
     )
-    # ✅ NEW: Authority updates rate limiting
     RATE_LIMIT_AUTHORITY_UPDATES_PER_DAY: int = Field(
-        default=10,
-        ge=1,
-        description="Max authority updates per day per authority"
+        default=10, ge=1, description="Authority updates/day"
     )
     RATE_LIMIT_GLOBAL_PER_MINUTE: int = Field(
-        default=60,
-        ge=10,
-        description="Global rate limit per minute"
+        default=60, ge=10, description="Global rate limit/min"
     )
     
     # ==================== VOTING SYSTEM ====================
-    MAX_VOTES_PER_COMPLAINT: int = Field(
-        default=100,
-        ge=10,
-        description="Maximum votes allowed per complaint"
-    )
-    VOTE_IMPACT_MULTIPLIER: float = Field(
-        default=2.0,
-        ge=0.1,
-        le=10.0,
-        description="Multiplier for vote impact on priority"
-    )
-    UPVOTE_POINTS: int = Field(
-        default=5,
-        ge=1,
-        description="Points awarded for upvote"
-    )
-    DOWNVOTE_POINTS: int = Field(
-        default=-3,
-        le=-1,
-        description="Points deducted for downvote"
-    )
+    MAX_VOTES_PER_COMPLAINT: int = Field(default=100, ge=10, description="Max votes per complaint")
+    VOTE_IMPACT_MULTIPLIER: float = Field(default=2.0, ge=0.1, le=10.0, description="Vote multiplier")
+    UPVOTE_POINTS: int = Field(default=5, ge=1, description="Upvote points")
+    DOWNVOTE_POINTS: int = Field(default=-3, le=-1, description="Downvote points")
     
     # ==================== PRIORITY CALCULATION ====================
-    PRIORITY_LOW_MIN: int = Field(
-        default=0,
-        description="Minimum score for Low priority"
-    )
-    PRIORITY_MEDIUM_MIN: int = Field(
-        default=50,
-        ge=1,
-        description="Minimum score for Medium priority"
-    )
-    PRIORITY_HIGH_MIN: int = Field(
-        default=100,
-        ge=50,
-        description="Minimum score for High priority"
-    )
-    PRIORITY_CRITICAL_MIN: int = Field(
-        default=200,
-        ge=100,
-        description="Minimum score for Critical priority"
-    )
+    PRIORITY_LOW_MIN: int = Field(default=0, description="Low priority threshold")
+    PRIORITY_MEDIUM_MIN: int = Field(default=50, ge=1, description="Medium priority threshold")
+    PRIORITY_HIGH_MIN: int = Field(default=100, ge=50, description="High priority threshold")
+    PRIORITY_CRITICAL_MIN: int = Field(default=200, ge=100, description="Critical priority threshold")
     
-    # ==================== FILE UPLOAD ====================
-    UPLOAD_DIR: str = Field(
-        default="./uploads",
-        description="Directory for uploaded files"
-    )
-    MAX_FILE_SIZE: int = Field(
-        default=5242880,  # 5MB
-        ge=1024,
-        description="Maximum file size in bytes"
-    )
+    # ==================== FILE UPLOAD & STORAGE ====================
+    UPLOAD_DIR: str = Field(default="./uploads", description="Upload directory")
+    MAX_FILE_SIZE: int = Field(default=5242880, ge=1024, description="Max file size (bytes)")
     ALLOWED_IMAGE_EXTENSIONS: List[str] = Field(
         default=["jpg", "jpeg", "png", "gif", "webp"],
-        description="Allowed image file extensions"
+        description="Allowed extensions"
     )
+    
+    # ✅ NEW: Image storage configuration
+    IMAGE_STORAGE_MODE: str = Field(
+        default="database",
+        description="Storage mode: database, filesystem, or s3"
+    )
+    IMAGE_ENCODING: str = Field(default="base64", description="Image encoding for DB storage")
+    STORE_ORIGINAL_AND_THUMBNAIL: bool = Field(
+        default=True,
+        description="Store both original and thumbnail"
+    )
+    MAX_IMAGE_WIDTH: int = Field(default=4096, ge=100, description="Max image width (px)")
+    MAX_IMAGE_HEIGHT: int = Field(default=4096, ge=100, description="Max image height (px)")
+    IMAGE_QUALITY: int = Field(default=85, ge=1, le=100, description="JPEG quality")
+    THUMBNAIL_WIDTH: int = Field(default=300, ge=50, description="Thumbnail width")
+    THUMBNAIL_HEIGHT: int = Field(default=300, ge=50, description="Thumbnail height")
     
     # ==================== LOGGING ====================
-    LOG_LEVEL: str = Field(
-        default="INFO",
-        description="Logging level"
-    )
-    LOG_FORMAT: str = Field(
-        default="text",
-        description="Log format: json or text"
-    )
-    LOG_FILE: str = Field(
-        default="./logs/campusvoice.log",
-        description="Log file path"
-    )
+    LOG_LEVEL: str = Field(default="INFO", description="Logging level")
+    LOG_FORMAT: str = Field(default="text", description="Log format: json or text")
+    LOG_FILE: str = Field(default="./logs/campusvoice.log", description="Log file path")
     
     # ==================== WEBSOCKET ====================
-    WEBSOCKET_PING_INTERVAL: int = Field(
-        default=30,
-        ge=10,
-        description="WebSocket ping interval in seconds"
-    )
-    WEBSOCKET_PING_TIMEOUT: int = Field(
-        default=10,
-        ge=5,
-        description="WebSocket ping timeout in seconds"
-    )
-    MAX_WEBSOCKET_CONNECTIONS: int = Field(
-        default=100,
-        ge=10,
-        description="Maximum WebSocket connections per user"
-    )
+    WEBSOCKET_PING_INTERVAL: int = Field(default=30, ge=10, description="Ping interval (sec)")
+    WEBSOCKET_PING_TIMEOUT: int = Field(default=10, ge=5, description="Ping timeout (sec)")
+    MAX_WEBSOCKET_CONNECTIONS: int = Field(default=100, ge=10, description="Max WS connections")
     
     # ==================== DATA RETENTION ====================
-    DATA_RETENTION_MONTHS: int = Field(
-        default=6,
-        ge=1,
-        description="Data retention period in months"
-    )
-    AUTO_DELETE_OLD_COMPLAINTS: bool = Field(
-        default=False,
-        description="Automatically delete old complaints"
-    )
+    DATA_RETENTION_MONTHS: int = Field(default=6, ge=1, description="Data retention (months)")
+    AUTO_DELETE_OLD_COMPLAINTS: bool = Field(default=False, description="Auto-delete old complaints")
     
     # ==================== FEATURE FLAGS ====================
-    ENABLE_EMAIL_VERIFICATION: bool = Field(
-        default=False,
-        description="Enable email verification"
-    )
-    ENABLE_IMAGE_VERIFICATION: bool = Field(
-        default=True,
-        description="Enable image verification"
-    )
-    ENABLE_SPAM_DETECTION: bool = Field(
-        default=True,
-        description="Enable spam detection"
-    )
-    ENABLE_AUTO_ESCALATION: bool = Field(
-        default=True,
-        description="Enable automatic escalation"
-    )
-    ENABLE_WEBSOCKET: bool = Field(
-        default=False,
-        description="Enable WebSocket support"
-    )
-    # ✅ NEW: Authority updates feature flag
-    ENABLE_AUTHORITY_UPDATES: bool = Field(
-        default=True,
-        description="Enable authority updates/announcements feature"
-    )
+    ENABLE_EMAIL_VERIFICATION: bool = Field(default=False, description="Enable email verification")
+    ENABLE_IMAGE_VERIFICATION: bool = Field(default=True, description="Enable image verification")
+    ENABLE_SPAM_DETECTION: bool = Field(default=True, description="Enable spam detection")
+    ENABLE_AUTO_ESCALATION: bool = Field(default=True, description="Enable auto-escalation")
+    ENABLE_WEBSOCKET: bool = Field(default=False, description="Enable WebSocket")
+    ENABLE_AUTHORITY_UPDATES: bool = Field(default=True, description="Enable authority updates")
     
     # ==================== EMAIL SETTINGS ====================
-    SMTP_HOST: str = Field(
-        default="smtp.gmail.com",
-        description="SMTP server host"
-    )
-    SMTP_PORT: int = Field(
-        default=587,
-        ge=1,
-        le=65535,
-        description="SMTP server port"
-    )
-    SMTP_USER: Optional[str] = Field(
-        default=None,
-        description="SMTP username"
-    )
-    SMTP_PASSWORD: Optional[str] = Field(
-        default=None,
-        description="SMTP password"
-    )
-    SMTP_FROM_EMAIL: str = Field(
-        default="noreply@campusvoice.edu",
-        description="Email sender address"
-    )
-    SMTP_FROM_NAME: str = Field(
-        default="CampusVoice",
-        description="Email sender name"
-    )
+    SMTP_HOST: str = Field(default="smtp.gmail.com", description="SMTP host")
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535, description="SMTP port")
+    SMTP_USER: Optional[str] = Field(default=None, description="SMTP username")
+    SMTP_PASSWORD: Optional[str] = Field(default=None, description="SMTP password")
+    SMTP_FROM_EMAIL: str = Field(default="noreply@campusvoice.edu", description="From email")
+    SMTP_FROM_NAME: str = Field(default="CampusVoice", description="From name")
     
     # ==================== FRONTEND ====================
-    FRONTEND_URL: str = Field(
-        default="http://localhost:3000",
-        description="Frontend application URL"
-    )
+    FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend URL")
     
     # ==================== ADMIN SETTINGS ====================
-    ADMIN_EMAIL: str = Field(
-        default="admin@campusvoice.edu",
-        description="Initial admin email"
-    )
-    ADMIN_PASSWORD: str = Field(
-        default="Admin@123",
-        min_length=8,
-        description="Initial admin password"
-    )
-    ADMIN_NAME: str = Field(
-        default="System Administrator",
-        description="Initial admin name"
-    )
+    ADMIN_EMAIL: str = Field(default="admin@campusvoice.edu", description="Admin email")
+    ADMIN_PASSWORD: str = Field(default="Admin@123", min_length=8, description="Admin password")
+    ADMIN_NAME: str = Field(default="System Administrator", description="Admin name")
     
     # ==================== COMPLAINT SETTINGS ====================
-    MIN_COMPLAINT_LENGTH: int = Field(
-        default=10,
-        ge=5,
-        description="Minimum complaint text length"
-    )
-    MAX_COMPLAINT_LENGTH: int = Field(
-        default=2000,
-        ge=100,
-        description="Maximum complaint text length"
-    )
-    ESCALATION_THRESHOLD_HOURS: int = Field(
-        default=48,
-        ge=1,
-        description="Hours before auto-escalation"
-    )
+    MIN_COMPLAINT_LENGTH: int = Field(default=10, ge=5, description="Min complaint length")
+    MAX_COMPLAINT_LENGTH: int = Field(default=2000, ge=100, description="Max complaint length")
+    ESCALATION_THRESHOLD_HOURS: int = Field(default=48, ge=1, description="Auto-escalation hours")
     
     # ==================== SPAM DETECTION ====================
     SPAM_KEYWORDS: List[str] = Field(
         default=["test", "dummy", "fake", "spam"],
-        description="Keywords for spam detection"
+        description="Spam keywords"
     )
-    MAX_COMPLAINTS_PER_HOUR: int = Field(
-        default=5,
-        ge=1,
-        description="Maximum complaints per hour per student"
-    )
-    SPAM_THRESHOLD_SCORE: float = Field(
-        default=0.7,
-        ge=0.0,
-        le=1.0,
-        description="Threshold for spam classification"
-    )
+    MAX_COMPLAINTS_PER_HOUR: int = Field(default=5, ge=1, description="Max complaints/hour")
+    SPAM_THRESHOLD_SCORE: float = Field(default=0.7, ge=0.0, le=1.0, description="Spam threshold")
     
-    # ✅ NEW: PUBLIC FEED SETTINGS ====================
-    PUBLIC_FEED_PAGE_SIZE: int = Field(
-        default=20,
-        ge=10,
-        le=100,
-        description="Default page size for public feed"
-    )
-    PUBLIC_FEED_MAX_AGE_DAYS: int = Field(
-        default=30,
-        ge=1,
-        description="Maximum age of complaints shown in public feed (days)"
-    )
-    SHOW_RESOLVED_IN_FEED: bool = Field(
-        default=True,
-        description="Show resolved complaints in public feed"
-    )
-    SHOW_CLOSED_IN_FEED: bool = Field(
-        default=False,
-        description="Show closed complaints in public feed"
-    )
+    # ==================== PUBLIC FEED SETTINGS ====================
+    PUBLIC_FEED_PAGE_SIZE: int = Field(default=20, ge=10, le=100, description="Feed page size")
+    PUBLIC_FEED_MAX_AGE_DAYS: int = Field(default=30, ge=1, description="Max feed age (days)")
+    SHOW_RESOLVED_IN_FEED: bool = Field(default=True, description="Show resolved in feed")
+    SHOW_CLOSED_IN_FEED: bool = Field(default=False, description="Show closed in feed")
     
-    # ✅ NEW: AUTHORITY UPDATE SETTINGS ====================
-    MIN_UPDATE_LENGTH: int = Field(
-        default=10,
-        ge=5,
-        description="Minimum authority update text length"
-    )
-    MAX_UPDATE_LENGTH: int = Field(
-        default=5000,
-        ge=100,
-        description="Maximum authority update text length"
-    )
-    UPDATE_EXPIRY_DAYS: int = Field(
-        default=30,
-        ge=1,
-        description="Days after which updates expire (auto-hide)"
-    )
-    HIGHLIGHT_URGENT_UPDATES: bool = Field(
-        default=True,
-        description="Highlight urgent updates in public feed"
-    )
+    # ==================== AUTHORITY UPDATE SETTINGS ====================
+    MIN_UPDATE_LENGTH: int = Field(default=10, ge=5, description="Min update length")
+    MAX_UPDATE_LENGTH: int = Field(default=5000, ge=100, description="Max update length")
+    UPDATE_EXPIRY_DAYS: int = Field(default=30, ge=1, description="Update expiry (days)")
+    HIGHLIGHT_URGENT_UPDATES: bool = Field(default=True, description="Highlight urgent updates")
     
-    # ==================== OPTIONAL: REDIS ====================
+    # ==================== REDIS & CACHING ====================
     REDIS_URL: Optional[str] = Field(
         default=None,
-        description="Redis connection URL (optional)"
+        description="Redis URL (required for distributed rate limiting)"
     )
-    CACHE_ENABLED: bool = Field(
-        default=False,
-        description="Enable caching"
-    )
-    CACHE_TTL: int = Field(
-        default=3600,
-        ge=60,
-        description="Cache TTL in seconds"
-    )
+    CACHE_ENABLED: bool = Field(default=False, description="Enable caching")
+    CACHE_TTL: int = Field(default=3600, ge=60, description="Cache TTL (seconds)")
     
-    # ==================== VALIDATORS ====================
+    # ==================== FIELD VALIDATORS ====================
     
     @field_validator('CORS_ORIGINS', 'CORS_ALLOW_METHODS', 'CORS_ALLOW_HEADERS', 
                      'ALLOWED_IMAGE_EXTENSIONS', 'SPAM_KEYWORDS', mode='before')
@@ -454,11 +189,9 @@ class Settings(BaseSettings):
     def parse_list_from_string(cls, v):
         """Parse list from JSON string or comma-separated string"""
         if isinstance(v, str):
-            # Try JSON first
             try:
                 return json.loads(v)
             except json.JSONDecodeError:
-                # Fall back to comma-separated
                 return [item.strip() for item in v.split(',') if item.strip()]
         return v
     
@@ -466,55 +199,124 @@ class Settings(BaseSettings):
     @classmethod
     def validate_database_url(cls, v):
         """Ensure database URL uses asyncpg driver"""
-        if not v.startswith('postgresql+asyncpg://'):
-            raise ValueError(
-                "DATABASE_URL must use asyncpg driver: "
-                "postgresql+asyncpg://user:pass@host:port/db"
-            )
-        return v
+        v = v.strip()
+        
+        if v.startswith('postgresql+asyncpg://'):
+            return v
+        if v.startswith('postgresql://'):
+            return v.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        if v.startswith('postgres://'):
+            return v.replace('postgres://', 'postgresql+asyncpg://', 1)
+        
+        raise ValueError(
+            "DATABASE_URL must use PostgreSQL format. "
+            "Supported: postgresql+asyncpg://, postgresql://, or postgres://"
+        )
     
     @field_validator('LOG_LEVEL')
     @classmethod
     def validate_log_level(cls, v):
         """Validate log level"""
-        allowed_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        allowed = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
         v_upper = v.upper()
-        if v_upper not in allowed_levels:
-            raise ValueError(f"LOG_LEVEL must be one of {allowed_levels}")
+        if v_upper not in allowed:
+            raise ValueError(f"LOG_LEVEL must be one of {allowed}")
         return v_upper
     
     @field_validator('LOG_FORMAT')
     @classmethod
     def validate_log_format(cls, v):
         """Validate log format"""
-        allowed_formats = ['json', 'text']
+        allowed = ['json', 'text']
         v_lower = v.lower()
-        if v_lower not in allowed_formats:
-            raise ValueError(f"LOG_FORMAT must be one of {allowed_formats}")
+        if v_lower not in allowed:
+            raise ValueError(f"LOG_FORMAT must be one of {allowed}")
         return v_lower
     
     @field_validator('ENVIRONMENT')
     @classmethod
     def validate_environment(cls, v):
         """Validate environment"""
-        allowed_envs = ['development', 'staging', 'production', 'test']
+        allowed = ['development', 'staging', 'production', 'test']
         v_lower = v.lower()
-        if v_lower not in allowed_envs:
-            raise ValueError(f"ENVIRONMENT must be one of {allowed_envs}")
+        if v_lower not in allowed:
+            raise ValueError(f"ENVIRONMENT must be one of {allowed}")
         return v_lower
     
-    # ✅ NEW: Validator for update length consistency
-    @field_validator('MAX_UPDATE_LENGTH')
+    @field_validator('JWT_ALGORITHM')
     @classmethod
-    def validate_update_length(cls, v, info):
-        """Ensure MAX_UPDATE_LENGTH is greater than MIN_UPDATE_LENGTH"""
-        min_length = info.data.get('MIN_UPDATE_LENGTH', 10)
-        if v <= min_length:
+    def validate_jwt_algorithm(cls, v):
+        """Validate JWT algorithm"""
+        allowed = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512']
+        v_upper = v.upper()
+        if v_upper not in allowed:
+            raise ValueError(f"JWT_ALGORITHM must be one of {allowed}")
+        return v_upper
+    
+    @field_validator('IMAGE_STORAGE_MODE')
+    @classmethod
+    def validate_storage_mode(cls, v):
+        """Validate image storage mode"""
+        allowed = ['database', 'filesystem', 's3']
+        v_lower = v.lower()
+        if v_lower not in allowed:
+            raise ValueError(f"IMAGE_STORAGE_MODE must be one of {allowed}")
+        return v_lower
+    
+    # ==================== MODEL VALIDATORS ====================
+    
+    @model_validator(mode='after')
+    def validate_cross_field_constraints(self):
+        """Validate constraints that depend on multiple fields"""
+        
+        # Complaint length
+        if self.MAX_COMPLAINT_LENGTH <= self.MIN_COMPLAINT_LENGTH:
             raise ValueError(
-                f"MAX_UPDATE_LENGTH ({v}) must be greater than "
-                f"MIN_UPDATE_LENGTH ({min_length})"
+                f"MAX_COMPLAINT_LENGTH ({self.MAX_COMPLAINT_LENGTH}) must be > "
+                f"MIN_COMPLAINT_LENGTH ({self.MIN_COMPLAINT_LENGTH})"
             )
-        return v
+        
+        # Update length
+        if self.MAX_UPDATE_LENGTH <= self.MIN_UPDATE_LENGTH:
+            raise ValueError(
+                f"MAX_UPDATE_LENGTH ({self.MAX_UPDATE_LENGTH}) must be > "
+                f"MIN_UPDATE_LENGTH ({self.MIN_UPDATE_LENGTH})"
+            )
+        
+        # Priority thresholds ascending
+        if not (self.PRIORITY_LOW_MIN < self.PRIORITY_MEDIUM_MIN < 
+                self.PRIORITY_HIGH_MIN < self.PRIORITY_CRITICAL_MIN):
+            raise ValueError("Priority thresholds must be ascending: LOW < MEDIUM < HIGH < CRITICAL")
+        
+        # WebSocket timeout < ping interval
+        if self.WEBSOCKET_PING_TIMEOUT >= self.WEBSOCKET_PING_INTERVAL:
+            raise ValueError(
+                f"WEBSOCKET_PING_TIMEOUT ({self.WEBSOCKET_PING_TIMEOUT}) must be < "
+                f"WEBSOCKET_PING_INTERVAL ({self.WEBSOCKET_PING_INTERVAL})"
+            )
+        
+        # Pool size warning
+        total_connections = self.DB_POOL_SIZE + self.DB_MAX_OVERFLOW
+        if total_connections > 100:
+            import warnings
+            warnings.warn(
+                f"Total DB connections ({total_connections}) exceeds 100. "
+                "Consider reducing pool_size or max_overflow."
+            )
+        
+        # ✅ NEW: Redis required for production rate limiting
+        if self.is_production and self.RATE_LIMIT_ENABLED and not self.REDIS_URL:
+            import warnings
+            warnings.warn(
+                "REDIS_URL not set in production. Rate limiting will use in-memory storage "
+                "(not suitable for multi-worker deployments)."
+            )
+        
+        # Thumbnail size validation
+        if self.THUMBNAIL_WIDTH > self.MAX_IMAGE_WIDTH or self.THUMBNAIL_HEIGHT > self.MAX_IMAGE_HEIGHT:
+            raise ValueError("Thumbnail dimensions must be <= max image dimensions")
+        
+        return self
     
     # ==================== COMPUTED PROPERTIES ====================
     
@@ -549,6 +351,8 @@ class Settings(BaseSettings):
         return {
             "api_key": self.GROQ_API_KEY,
             "model": self.LLM_MODEL,
+            "fallback_model": self.LLM_FALLBACK_MODEL,
+            "openai_key": self.OPENAI_API_KEY,
             "temperature": self.LLM_TEMPERATURE,
             "max_tokens": self.LLM_MAX_TOKENS,
             "timeout": self.LLM_TIMEOUT,
@@ -566,7 +370,6 @@ class Settings(BaseSettings):
             "Critical": self.PRIORITY_CRITICAL_MIN,
         }
     
-    # ✅ NEW: Rate limit configuration
     @computed_field
     @property
     def rate_limit_config(self) -> Dict:
@@ -580,7 +383,6 @@ class Settings(BaseSettings):
             "global_per_minute": self.RATE_LIMIT_GLOBAL_PER_MINUTE,
         }
     
-    # ✅ NEW: Public feed configuration
     @computed_field
     @property
     def public_feed_config(self) -> Dict:
@@ -592,7 +394,6 @@ class Settings(BaseSettings):
             "show_closed": self.SHOW_CLOSED_IN_FEED,
         }
     
-    # ✅ NEW: Authority update configuration
     @computed_field
     @property
     def authority_update_config(self) -> Dict:
@@ -602,6 +403,32 @@ class Settings(BaseSettings):
             "max_length": self.MAX_UPDATE_LENGTH,
             "expiry_days": self.UPDATE_EXPIRY_DAYS,
             "highlight_urgent": self.HIGHLIGHT_URGENT_UPDATES,
+        }
+    
+    @computed_field
+    @property
+    def image_storage_config(self) -> Dict:
+        """Get image storage configuration dict"""
+        return {
+            "mode": self.IMAGE_STORAGE_MODE,
+            "encoding": self.IMAGE_ENCODING,
+            "store_thumbnail": self.STORE_ORIGINAL_AND_THUMBNAIL,
+            "max_width": self.MAX_IMAGE_WIDTH,
+            "max_height": self.MAX_IMAGE_HEIGHT,
+            "quality": self.IMAGE_QUALITY,
+            "thumbnail_width": self.THUMBNAIL_WIDTH,
+            "thumbnail_height": self.THUMBNAIL_HEIGHT,
+        }
+    
+    @computed_field
+    @property
+    def cors_config(self) -> Dict:
+        """Get CORS configuration dict"""
+        return {
+            "allow_origins": self.CORS_ORIGINS,
+            "allow_credentials": self.CORS_ALLOW_CREDENTIALS,
+            "allow_methods": self.CORS_ALLOW_METHODS,
+            "allow_headers": self.CORS_ALLOW_HEADERS,
         }
     
     @computed_field
@@ -616,18 +443,30 @@ class Settings(BaseSettings):
         """Check if running in development"""
         return self.ENVIRONMENT == "development"
     
+    @computed_field
+    @property
+    def is_test(self) -> bool:
+        """Check if running in test mode"""
+        return self.ENVIRONMENT == "test"
+    
+    @computed_field
+    @property
+    def max_file_size_mb(self) -> float:
+        """Get max file size in MB"""
+        return self.MAX_FILE_SIZE / (1024 * 1024)
+    
     # ==================== MODEL CONFIG ====================
     
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="ignore",  # Ignore extra fields in .env
+        extra="ignore",
         validate_default=True,
     )
 
 
-# ==================== CREATE GLOBAL INSTANCE ====================
+# ==================== GLOBAL INSTANCE ====================
 
 settings = Settings()
 
@@ -635,15 +474,13 @@ settings = Settings()
 # ==================== HELPER FUNCTIONS ====================
 
 def get_settings() -> Settings:
-    """
-    Get settings instance (for dependency injection).
-    
-    Returns:
-        Settings instance
-    """
+    """Get settings instance (for FastAPI dependency injection)"""
     return settings
 
 
-# ==================== EXPORTS ====================
+def reload_settings() -> Settings:
+    """Reload settings from environment (useful for testing)"""
+    return Settings()
 
-__all__ = ["settings", "Settings", "get_settings"]
+
+__all__ = ["settings", "Settings", "get_settings", "reload_settings"]
