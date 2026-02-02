@@ -4,6 +4,7 @@ Notification repository with specialized queries.
 
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, and_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Notification
@@ -92,8 +93,7 @@ class NotificationRepository(BaseRepository[Notification]):
         notification = await self.get(notification_id)
         if notification:
             notification.is_read = True
-            from datetime import datetime
-            notification.read_at = datetime.utcnow()
+            notification.read_at = datetime.now(timezone.utc)
             await self.session.commit()
             return True
         return False
@@ -111,11 +111,10 @@ class NotificationRepository(BaseRepository[Notification]):
         Returns:
             Number of updated notifications
         """
-        from datetime import datetime
         stmt = (
             update(Notification)
             .where(Notification.id.in_(notification_ids))
-            .values(is_read=True, read_at=datetime.utcnow())
+            .values(is_read=True, read_at=datetime.now(timezone.utc))
         )
         result = await self.session.execute(stmt)
         await self.session.commit()
@@ -136,7 +135,6 @@ class NotificationRepository(BaseRepository[Notification]):
         Returns:
             Number of updated notifications
         """
-        from datetime import datetime
         stmt = (
             update(Notification)
             .where(
@@ -146,7 +144,7 @@ class NotificationRepository(BaseRepository[Notification]):
                     Notification.is_read == False
                 )
             )
-            .values(is_read=True, read_at=datetime.utcnow())
+            .values(is_read=True, read_at=datetime.now(timezone.utc))
         )
         result = await self.session.execute(stmt)
         await self.session.commit()
@@ -165,8 +163,7 @@ class NotificationRepository(BaseRepository[Notification]):
         Returns:
             Number of deleted notifications
         """
-        from datetime import datetime, timedelta
-        threshold = datetime.utcnow() - timedelta(days=days)
+        threshold = datetime.now(timezone.utc) - timedelta(days=days)
         
         stmt = delete(Notification).where(
             Notification.created_at < threshold
