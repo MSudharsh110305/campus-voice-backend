@@ -166,6 +166,12 @@ class Settings(BaseSettings):
         ge=100,
         description="Max API calls per authority per hour"
     )
+    # ✅ NEW: Authority updates rate limiting
+    RATE_LIMIT_AUTHORITY_UPDATES_PER_DAY: int = Field(
+        default=10,
+        ge=1,
+        description="Max authority updates per day per authority"
+    )
     RATE_LIMIT_GLOBAL_PER_MINUTE: int = Field(
         default=60,
         ge=10,
@@ -294,6 +300,11 @@ class Settings(BaseSettings):
         default=False,
         description="Enable WebSocket support"
     )
+    # ✅ NEW: Authority updates feature flag
+    ENABLE_AUTHORITY_UPDATES: bool = Field(
+        default=True,
+        description="Enable authority updates/announcements feature"
+    )
     
     # ==================== EMAIL SETTINGS ====================
     SMTP_HOST: str = Field(
@@ -378,6 +389,48 @@ class Settings(BaseSettings):
         description="Threshold for spam classification"
     )
     
+    # ✅ NEW: PUBLIC FEED SETTINGS ====================
+    PUBLIC_FEED_PAGE_SIZE: int = Field(
+        default=20,
+        ge=10,
+        le=100,
+        description="Default page size for public feed"
+    )
+    PUBLIC_FEED_MAX_AGE_DAYS: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum age of complaints shown in public feed (days)"
+    )
+    SHOW_RESOLVED_IN_FEED: bool = Field(
+        default=True,
+        description="Show resolved complaints in public feed"
+    )
+    SHOW_CLOSED_IN_FEED: bool = Field(
+        default=False,
+        description="Show closed complaints in public feed"
+    )
+    
+    # ✅ NEW: AUTHORITY UPDATE SETTINGS ====================
+    MIN_UPDATE_LENGTH: int = Field(
+        default=10,
+        ge=5,
+        description="Minimum authority update text length"
+    )
+    MAX_UPDATE_LENGTH: int = Field(
+        default=5000,
+        ge=100,
+        description="Maximum authority update text length"
+    )
+    UPDATE_EXPIRY_DAYS: int = Field(
+        default=30,
+        ge=1,
+        description="Days after which updates expire (auto-hide)"
+    )
+    HIGHLIGHT_URGENT_UPDATES: bool = Field(
+        default=True,
+        description="Highlight urgent updates in public feed"
+    )
+    
     # ==================== OPTIONAL: REDIS ====================
     REDIS_URL: Optional[str] = Field(
         default=None,
@@ -450,6 +503,19 @@ class Settings(BaseSettings):
             raise ValueError(f"ENVIRONMENT must be one of {allowed_envs}")
         return v_lower
     
+    # ✅ NEW: Validator for update length consistency
+    @field_validator('MAX_UPDATE_LENGTH')
+    @classmethod
+    def validate_update_length(cls, v, info):
+        """Ensure MAX_UPDATE_LENGTH is greater than MIN_UPDATE_LENGTH"""
+        min_length = info.data.get('MIN_UPDATE_LENGTH', 10)
+        if v <= min_length:
+            raise ValueError(
+                f"MAX_UPDATE_LENGTH ({v}) must be greater than "
+                f"MIN_UPDATE_LENGTH ({min_length})"
+            )
+        return v
+    
     # ==================== COMPUTED PROPERTIES ====================
     
     @computed_field
@@ -498,6 +564,44 @@ class Settings(BaseSettings):
             "Medium": self.PRIORITY_MEDIUM_MIN,
             "High": self.PRIORITY_HIGH_MIN,
             "Critical": self.PRIORITY_CRITICAL_MIN,
+        }
+    
+    # ✅ NEW: Rate limit configuration
+    @computed_field
+    @property
+    def rate_limit_config(self) -> Dict:
+        """Get rate limit configuration dict"""
+        return {
+            "enabled": self.RATE_LIMIT_ENABLED,
+            "student_complaints_per_day": self.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY,
+            "student_api_per_hour": self.RATE_LIMIT_STUDENT_API_PER_HOUR,
+            "authority_api_per_hour": self.RATE_LIMIT_AUTHORITY_API_PER_HOUR,
+            "authority_updates_per_day": self.RATE_LIMIT_AUTHORITY_UPDATES_PER_DAY,
+            "global_per_minute": self.RATE_LIMIT_GLOBAL_PER_MINUTE,
+        }
+    
+    # ✅ NEW: Public feed configuration
+    @computed_field
+    @property
+    def public_feed_config(self) -> Dict:
+        """Get public feed configuration dict"""
+        return {
+            "page_size": self.PUBLIC_FEED_PAGE_SIZE,
+            "max_age_days": self.PUBLIC_FEED_MAX_AGE_DAYS,
+            "show_resolved": self.SHOW_RESOLVED_IN_FEED,
+            "show_closed": self.SHOW_CLOSED_IN_FEED,
+        }
+    
+    # ✅ NEW: Authority update configuration
+    @computed_field
+    @property
+    def authority_update_config(self) -> Dict:
+        """Get authority update configuration dict"""
+        return {
+            "min_length": self.MIN_UPDATE_LENGTH,
+            "max_length": self.MAX_UPDATE_LENGTH,
+            "expiry_days": self.UPDATE_EXPIRY_DAYS,
+            "highlight_urgent": self.HIGHLIGHT_URGENT_UPDATES,
         }
     
     @computed_field
