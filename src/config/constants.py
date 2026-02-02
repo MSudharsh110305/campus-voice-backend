@@ -3,7 +3,7 @@ Fixed constants for CampusVoice application.
 Department codes, categories, authority levels, status transitions, etc.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Any
 from enum import Enum
 import re
 
@@ -20,93 +20,30 @@ class DepartmentCode(str, Enum):
     IT = "IT"
     BIO = "BIO"
     AERO = "AERO"
-    RAA = "RAA"  # Robotics and Automation
-    EIE = "EIE"  # Electronics & Instrumentation Engineering
-    MBA = "MBA"  # Management Studies
-    AIDS = "AIDS"  # Artificial Intelligence and Data Science
-    MTECH_CSE = "MTECH_CSE"  # M.Tech in Computer Science and Engineering
+    RAA = "RAA"
+    EIE = "EIE"
+    MBA = "MBA"
+    AIDS = "AIDS"
+    MTECH_CSE = "MTECH_CSE"
 
 
-DEPARTMENTS: List[Dict[str, str]] = [
-    {
-        "code": "CSE",
-        "name": "Computer Science & Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "ECE",
-        "name": "Electronics & Communication Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "RAA",
-        "name": "Robotics and Automation",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "MECH",
-        "name": "Mechanical Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "EEE",
-        "name": "Electrical & Electronics Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "EIE",
-        "name": "Electronics & Instrumentation Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "BIO",
-        "name": "Biomedical Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "AERO",
-        "name": "Aeronautical Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "CIVIL",
-        "name": "Civil Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "IT",
-        "name": "Information Technology",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "MBA",
-        "name": "Management Studies",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "AIDS",
-        "name": "Artificial Intelligence and Data Science",
-        "hod_name": None,
-        "hod_email": None,
-    },
-    {
-        "code": "MTECH_CSE",
-        "name": "M.Tech in Computer Science and Engineering",
-        "hod_name": None,
-        "hod_email": None,
-    },
+DEPARTMENTS: List[Dict[str, Any]] = [
+    {"code": "CSE", "name": "Computer Science & Engineering", "hod_name": None, "hod_email": None},
+    {"code": "ECE", "name": "Electronics & Communication Engineering", "hod_name": None, "hod_email": None},
+    {"code": "RAA", "name": "Robotics and Automation", "hod_name": None, "hod_email": None},
+    {"code": "MECH", "name": "Mechanical Engineering", "hod_name": None, "hod_email": None},
+    {"code": "EEE", "name": "Electrical & Electronics Engineering", "hod_name": None, "hod_email": None},
+    {"code": "EIE", "name": "Electronics & Instrumentation Engineering", "hod_name": None, "hod_email": None},
+    {"code": "BIO", "name": "Biomedical Engineering", "hod_name": None, "hod_email": None},
+    {"code": "AERO", "name": "Aeronautical Engineering", "hod_name": None, "hod_email": None},
+    {"code": "CIVIL", "name": "Civil Engineering", "hod_name": None, "hod_email": None},
+    {"code": "IT", "name": "Information Technology", "hod_name": None, "hod_email": None},
+    {"code": "MBA", "name": "Management Studies", "hod_name": None, "hod_email": None},
+    {"code": "AIDS", "name": "Artificial Intelligence and Data Science", "hod_name": None, "hod_email": None},
+    {"code": "MTECH_CSE", "name": "M.Tech in Computer Science and Engineering", "hod_name": None, "hod_email": None},
 ]
+
+
 # ==================== COMPLAINT CATEGORIES ====================
 
 class CategoryName(str, Enum):
@@ -117,7 +54,7 @@ class CategoryName(str, Enum):
     DISCIPLINARY = "Disciplinary Committee"
 
 
-CATEGORIES: List[Dict[str, any]] = [
+CATEGORIES: List[Dict[str, Any]] = [
     {
         "name": "Hostel",
         "description": "Hostel facilities, cleanliness, room issues, mess complaints, amenities",
@@ -154,7 +91,6 @@ class AuthorityType(str, Enum):
     DISCIPLINARY_COMMITTEE = "Disciplinary Committee"
 
 
-# Authority Hierarchy Levels (higher = more authority)
 AUTHORITY_LEVELS: Dict[str, int] = {
     "Admin": 100,
     "Admin Officer": 50,
@@ -165,10 +101,7 @@ AUTHORITY_LEVELS: Dict[str, int] = {
     "Warden": 5,
 }
 
-# Reverse mapping: level to authority type
-LEVEL_TO_AUTHORITY: Dict[int, str] = {
-    v: k for k, v in AUTHORITY_LEVELS.items()
-}
+LEVEL_TO_AUTHORITY: Dict[int, str] = {v: k for k, v in AUTHORITY_LEVELS.items()}
 
 
 # ==================== COMPLAINT STATUS ====================
@@ -186,8 +119,8 @@ VALID_STATUS_TRANSITIONS: Dict[str, List[str]] = {
     "Raised": ["In Progress", "Spam", "Closed"],
     "In Progress": ["Resolved", "Raised", "Closed"],
     "Resolved": ["Closed", "Raised"],
-    "Closed": [],  # Terminal state
-    "Spam": ["Closed"],  # Can only close spam
+    "Closed": [],
+    "Spam": ["Closed"],
 }
 
 
@@ -201,7 +134,6 @@ class PriorityLevel(str, Enum):
     CRITICAL = "Critical"
 
 
-# Base priority scores (will be overridden by settings)
 PRIORITY_SCORES: Dict[str, float] = {
     "Low": 10.0,
     "Medium": 50.0,
@@ -209,10 +141,7 @@ PRIORITY_SCORES: Dict[str, float] = {
     "Critical": 200.0,
 }
 
-# Vote impact multiplier (overridden by settings)
 VOTE_IMPACT_MULTIPLIER: float = 2.0
-
-# Priority thresholds for auto-escalation
 PRIORITY_AUTO_ESCALATE_THRESHOLD: float = 150.0
 
 
@@ -240,7 +169,6 @@ class StayType(str, Enum):
     DAY_SCHOLAR = "Day Scholar"
 
 
-# ✅ NEW: Student Year Enum
 class StudentYear(str, Enum):
     """Student year/grade enums"""
     FIRST = "1st Year"
@@ -249,7 +177,6 @@ class StudentYear(str, Enum):
     FOURTH = "4th Year"
 
 
-# Valid years list for validation
 VALID_YEARS: List[str] = ["1st Year", "2nd Year", "3rd Year", "4th Year"]
 
 
@@ -273,7 +200,6 @@ class NotificationType(str, Enum):
     VOTE_MILESTONE = "vote_milestone"
     COMPLAINT_RESOLVED = "complaint_resolved"
     COMPLAINT_CLOSED = "complaint_closed"
-    # ✅ NEW: Authority update notifications
     AUTHORITY_UPDATE_POSTED = "authority_update_posted"
     URGENT_UPDATE = "urgent_update"
 
@@ -297,7 +223,7 @@ class ImageVerificationStatus(str, Enum):
     REJECTED = "Rejected"
 
 
-# ==================== AUTHORITY UPDATES (NEW FEATURE) ====================
+# ==================== AUTHORITY UPDATES ====================
 
 class UpdatePriority(str, Enum):
     """Authority update priority levels"""
@@ -309,11 +235,11 @@ class UpdatePriority(str, Enum):
 
 class UpdateVisibility(str, Enum):
     """Authority update visibility levels"""
-    DEPARTMENT = "Department"  # Only visible to specific department
-    YEAR = "Year"              # Only visible to specific year
-    HOSTEL = "Hostel"          # Only visible to hostel students
-    DAY_SCHOLAR = "Day Scholar"  # Only visible to day scholars
-    ALL_STUDENTS = "All Students"  # Visible to everyone
+    DEPARTMENT = "Department"
+    YEAR = "Year"
+    HOSTEL = "Hostel"
+    DAY_SCHOLAR = "Day Scholar"
+    ALL_STUDENTS = "All Students"
 
 
 class UpdateCategory(str, Enum):
@@ -326,26 +252,22 @@ class UpdateCategory(str, Enum):
     GENERAL = "General"
 
 
-# Authority update constants
-MAX_UPDATE_LENGTH: int = 5000  # Characters
-MIN_UPDATE_LENGTH: int = 10    # Characters
-UPDATE_EXPIRY_DAYS: int = 30   # Auto-hide after 30 days
+MAX_UPDATE_LENGTH: int = 5000
+MIN_UPDATE_LENGTH: int = 10
+UPDATE_EXPIRY_DAYS: int = 30
 
 
 # ==================== ROUTING RULES ====================
 
-# Default routing by category
 DEFAULT_CATEGORY_ROUTING: Dict[str, str] = {
     "Hostel": "Warden",
     "General": "Admin Officer",
-    "Department": "HOD",  # Dynamic based on student department
+    "Department": "HOD",
     "Disciplinary Committee": "Disciplinary Committee",
 }
 
-# Cross-department complaint routing
 CROSS_DEPARTMENT_AUTHORITY: str = "Admin Officer"
 
-# Authority escalation rules (if complaint is against assigned authority)
 ESCALATION_RULES: Dict[str, str] = {
     "Warden": "Deputy Warden",
     "Deputy Warden": "Senior Deputy Warden",
@@ -353,57 +275,60 @@ ESCALATION_RULES: Dict[str, str] = {
     "HOD": "Admin Officer",
     "Admin Officer": "Admin",
     "Disciplinary Committee": "Admin",
-    "Admin": "Admin",  # No further escalation
+    "Admin": "Admin",
 }
 
 
 # ==================== RATE LIMITING ====================
 
-# Rate limit keys (templates)
-RATE_LIMIT_KEYS = {
+RATE_LIMIT_KEYS: Dict[str, str] = {
     "student_complaints": "student:{roll_no}:complaints",
     "student_votes": "student:{roll_no}:votes",
     "student_api": "student:{roll_no}:api",
     "authority_api": "authority:{auth_id}:api",
-    "authority_updates": "authority:{auth_id}:updates",  # ✅ NEW
+    "authority_updates": "authority:{auth_id}:updates",
     "global": "global:api",
 }
 
 
 # ==================== SPAM DETECTION ====================
 
-# Spam keywords (basic - overridden by settings)
 SPAM_KEYWORDS: List[str] = [
     "spam", "test", "testing", "dummy", "fake",
     "xyz", "abc", "123", "asdf", "qwerty",
     "junk", "trash", "nonsense", "gibberish",
 ]
 
-# Minimum/Maximum complaint length (overridden by settings)
 MIN_COMPLAINT_LENGTH: int = 10
 MAX_COMPLAINT_LENGTH: int = 2000
 
-# Spam detection thresholds
-SPAM_DETECTION_THRESHOLDS = {
-    "repeated_chars": 10,  # More than 10 repeated characters
-    "all_caps_threshold": 0.7,  # 70% uppercase
-    "word_repetition": 5,  # Same word repeated 5+ times
+SPAM_DETECTION_THRESHOLDS: Dict[str, int | float] = {
+    "repeated_chars": 10,
+    "all_caps_threshold": 0.7,
+    "word_repetition": 5,
 }
 
 
 # ==================== FILE UPLOAD ====================
 
-# Image constraints
 MAX_IMAGE_WIDTH: int = 4096
 MAX_IMAGE_HEIGHT: int = 4096
-IMAGE_QUALITY: int = 85  # JPEG quality
+IMAGE_QUALITY: int = 85
+MAX_IMAGE_SIZE_MB: int = 5
 
-# Thumbnail sizes
-THUMBNAIL_SIZES = {
+THUMBNAIL_SIZES: Dict[str, tuple] = {
     "small": (150, 150),
     "medium": (300, 300),
     "large": (800, 800),
 }
+
+ALLOWED_IMAGE_MIMETYPES: List[str] = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+]
 
 
 # ==================== PAGINATION ====================
@@ -415,46 +340,30 @@ MIN_PAGE_SIZE: int = 1
 
 # ==================== TIME CONSTANTS ====================
 
-# Auto-escalation if no response in X hours (overridden by settings)
 AUTO_ESCALATE_HOURS: int = 48
 
-# Complaint resolution SLA (hours by priority)
 SLA_HOURS: Dict[str, int] = {
-    "Low": 168,      # 7 days
-    "Medium": 72,    # 3 days
-    "High": 24,      # 1 day
-    "Critical": 6,   # 6 hours
+    "Low": 168,
+    "Medium": 72,
+    "High": 24,
+    "Critical": 6,
 }
 
-# Session timeout (minutes)
 SESSION_TIMEOUT_MINUTES: int = 60
-
-# Token expiration (seconds)
-TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
+TOKEN_EXPIRATION_SECONDS: int = 604800
 
 
 # ==================== REGEX PATTERNS ====================
 
-# Email validation pattern
 EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-
-# Roll number pattern (customize based on your college format)
-# Format: 2 digits (year) + 2-3 letters (dept) + 3-4 digits (number)
-# Example: 21CSE001, 22ECE0123
 ROLL_NO_PATTERN = re.compile(r'^[0-9]{2}[A-Z]{2,4}[0-9]{3,4}$')
-
-# Phone number pattern (Indian - starts with 6-9, 10 digits)
 PHONE_PATTERN = re.compile(r'^[6-9]\d{9}$')
-
-# Password strength pattern
-PASSWORD_PATTERN = re.compile(
-    r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$'
-)
+PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
 
 
 # ==================== HTTP STATUS CODES ====================
 
-HTTP_STATUS = {
+HTTP_STATUS: Dict[str, int] = {
     "OK": 200,
     "CREATED": 201,
     "ACCEPTED": 202,
@@ -473,48 +382,34 @@ HTTP_STATUS = {
 
 # ==================== ERROR CODES ====================
 
-ERROR_CODES = {
-    # Authentication
+ERROR_CODES: Dict[str, str] = {
     "AUTH_ERROR": "AUTH_001",
     "INVALID_CREDENTIALS": "AUTH_002",
     "TOKEN_EXPIRED": "AUTH_003",
     "INVALID_TOKEN": "AUTH_004",
     "ACCOUNT_INACTIVE": "AUTH_005",
-    
-    # Authorization
     "UNAUTHORIZED": "AUTHZ_001",
     "INSUFFICIENT_PERMISSIONS": "AUTHZ_002",
-    
-    # Validation
     "VALIDATION_ERROR": "VAL_001",
     "DUPLICATE_ENTRY": "VAL_002",
-    
-    # Resources
     "RESOURCE_NOT_FOUND": "RES_001",
     "STUDENT_NOT_FOUND": "RES_002",
     "COMPLAINT_NOT_FOUND": "RES_003",
     "AUTHORITY_NOT_FOUND": "RES_004",
-    "UPDATE_NOT_FOUND": "RES_005",  # ✅ NEW
-    
-    # Student
-    "INVALID_YEAR": "STUD_006",  # ✅ NEW
-    
-    # Business Logic
+    "UPDATE_NOT_FOUND": "RES_005",
+    "DEPARTMENT_NOT_FOUND": "RES_006",
+    "CATEGORY_NOT_FOUND": "RES_007",
+    "INVALID_YEAR": "STUD_006",
     "SPAM_DETECTED": "BIZ_001",
     "BLACKLISTED": "BIZ_002",
     "RATE_LIMIT_EXCEEDED": "BIZ_003",
     "INVALID_STATUS_TRANSITION": "BIZ_004",
     "DUPLICATE_VOTE": "BIZ_005",
-    
-    # File Upload
     "INVALID_FILE_TYPE": "FILE_001",
     "FILE_TOO_LARGE": "FILE_002",
-    
-    # External Services
+    "IMAGE_UPLOAD_FAILED": "FILE_003",
     "LLM_SERVICE_ERROR": "EXT_001",
     "DATABASE_ERROR": "EXT_002",
-    
-    # ✅ NEW: Authority Updates
     "INVALID_UPDATE_TYPE": "UPD_001",
     "UPDATE_TOO_LONG": "UPD_002",
     "UPDATE_TOO_SHORT": "UPD_003",
@@ -525,19 +420,22 @@ ERROR_CODES = {
 
 # ==================== ERROR MESSAGES ====================
 
-ERROR_MESSAGES = {
+ERROR_MESSAGES: Dict[str, str] = {
     "INVALID_CREDENTIALS": "Invalid email or password",
     "STUDENT_NOT_FOUND": "Student not found",
     "AUTHORITY_NOT_FOUND": "Authority not found",
     "COMPLAINT_NOT_FOUND": "Complaint not found",
-    "UPDATE_NOT_FOUND": "Authority update not found",  # ✅ NEW
-    "INVALID_YEAR": "Invalid year. Must be one of: 1st Year, 2nd Year, 3rd Year, 4th Year",  # ✅ NEW
+    "UPDATE_NOT_FOUND": "Authority update not found",
+    "DEPARTMENT_NOT_FOUND": "Department not found",
+    "CATEGORY_NOT_FOUND": "Category not found",
+    "INVALID_YEAR": "Invalid year. Must be one of: 1st Year, 2nd Year, 3rd Year, 4th Year",
     "UNAUTHORIZED": "You are not authorized to perform this action",
     "RATE_LIMIT_EXCEEDED": "Rate limit exceeded. Please try again later",
     "SPAM_DETECTED": "Your complaint has been flagged as spam",
     "BLACKLISTED": "Your account has been temporarily suspended",
     "INVALID_FILE_TYPE": "Invalid file type. Only images are allowed",
-    "FILE_TOO_LARGE": "File size exceeds maximum limit",
+    "FILE_TOO_LARGE": f"File size exceeds maximum limit of {MAX_IMAGE_SIZE_MB}MB",
+    "IMAGE_UPLOAD_FAILED": "Image upload failed. Please try again",
     "INVALID_STATUS_TRANSITION": "Invalid status transition",
     "DUPLICATE_VOTE": "You have already voted on this complaint",
     "TOKEN_EXPIRED": "Your session has expired. Please login again",
@@ -548,7 +446,6 @@ ERROR_MESSAGES = {
     "DUPLICATE_ENTRY": "This entry already exists",
     "LLM_SERVICE_ERROR": "AI service is temporarily unavailable",
     "DATABASE_ERROR": "Database operation failed",
-    # ✅ NEW: Authority update errors
     "INVALID_UPDATE_TYPE": "Invalid update type",
     "UPDATE_TOO_LONG": f"Update text exceeds maximum length of {MAX_UPDATE_LENGTH} characters",
     "UPDATE_TOO_SHORT": f"Update text must be at least {MIN_UPDATE_LENGTH} characters",
@@ -559,7 +456,7 @@ ERROR_MESSAGES = {
 
 # ==================== SUCCESS MESSAGES ====================
 
-SUCCESS_MESSAGES = {
+SUCCESS_MESSAGES: Dict[str, str] = {
     "STUDENT_REGISTERED": "Student registered successfully",
     "LOGIN_SUCCESS": "Login successful",
     "COMPLAINT_SUBMITTED": "Complaint submitted successfully",
@@ -572,7 +469,6 @@ SUCCESS_MESSAGES = {
     "IMAGE_UPLOADED": "Image uploaded successfully",
     "COMPLAINT_DELETED": "Complaint deleted successfully",
     "AUTHORITY_CREATED": "Authority created successfully",
-    # ✅ NEW: Authority update success messages
     "UPDATE_POSTED": "Authority update posted successfully",
     "UPDATE_EDITED": "Authority update edited successfully",
     "UPDATE_DELETED": "Authority update deleted successfully",
@@ -581,39 +477,36 @@ SUCCESS_MESSAGES = {
 
 # ==================== CACHE KEYS ====================
 
-CACHE_KEY_TEMPLATES = {
+CACHE_KEY_TEMPLATES: Dict[str, str] = {
     "student_profile": "student:profile:{roll_no}",
     "authority_profile": "authority:profile:{id}",
     "complaint": "complaint:{id}",
     "complaint_list": "complaints:list:{filters}",
     "departments": "departments:all",
     "categories": "categories:all",
-    # ✅ NEW: Authority update cache keys
     "authority_update": "authority_update:{id}",
     "authority_updates_list": "authority_updates:{filters}",
     "student_feed": "student_feed:{roll_no}:{filters}",
     "public_feed": "public_feed:{filters}",
 }
 
-# Cache TTL (seconds)
-CACHE_TTL = {
-    "student_profile": 3600,  # 1 hour
+CACHE_TTL: Dict[str, int] = {
+    "student_profile": 3600,
     "authority_profile": 3600,
-    "complaint": 300,  # 5 minutes
-    "complaint_list": 60,  # 1 minute
-    "departments": 86400,  # 24 hours
+    "complaint": 300,
+    "complaint_list": 60,
+    "departments": 86400,
     "categories": 86400,
-    # ✅ NEW: Authority update cache TTL
-    "authority_update": 600,         # 10 minutes
-    "authority_updates_list": 300,   # 5 minutes
-    "student_feed": 180,              # 3 minutes
-    "public_feed": 180,               # 3 minutes
+    "authority_update": 600,
+    "authority_updates_list": 300,
+    "student_feed": 180,
+    "public_feed": 180,
 }
 
 
 # ==================== WEBSOCKET EVENTS ====================
 
-WS_EVENTS = {
+WS_EVENTS: Dict[str, str] = {
     "CONNECT": "connect",
     "DISCONNECT": "disconnect",
     "COMPLAINT_UPDATE": "complaint_update",
@@ -623,7 +516,6 @@ WS_EVENTS = {
     "VOTE_UPDATE": "vote_update",
     "PING": "ping",
     "PONG": "pong",
-    # ✅ NEW: Authority update WebSocket events
     "NEW_AUTHORITY_UPDATE": "new_authority_update",
     "UPDATE_EDITED": "update_edited",
     "UPDATE_DELETED": "update_deleted",
@@ -632,7 +524,7 @@ WS_EVENTS = {
 
 # ==================== DATE FORMATS ====================
 
-DATE_FORMATS = {
+DATE_FORMATS: Dict[str, str] = {
     "ISO": "%Y-%m-%dT%H:%M:%S",
     "DATE_ONLY": "%Y-%m-%d",
     "TIME_ONLY": "%H:%M:%S",
@@ -644,15 +536,7 @@ DATE_FORMATS = {
 # ==================== HELPER FUNCTIONS ====================
 
 def get_priority_from_score(score: float) -> str:
-    """
-    Get priority level from score.
-    
-    Args:
-        score: Priority score
-    
-    Returns:
-        Priority level string
-    """
+    """Get priority level from score"""
     if score >= PRIORITY_SCORES["Critical"]:
         return "Critical"
     elif score >= PRIORITY_SCORES["High"]:
@@ -664,30 +548,25 @@ def get_priority_from_score(score: float) -> str:
 
 
 def is_valid_status_transition(current: str, new: str) -> bool:
-    """
-    Check if status transition is valid.
-    
-    Args:
-        current: Current status
-        new: New status
-    
-    Returns:
-        True if transition is valid
-    """
+    """Check if status transition is valid"""
     return new in VALID_STATUS_TRANSITIONS.get(current, [])
 
 
 def is_valid_year(year: str) -> bool:
-    """
-    Check if student year is valid.
-    
-    Args:
-        year: Student year string
-    
-    Returns:
-        True if year is valid
-    """
+    """Check if student year is valid"""
     return year in VALID_YEARS
+
+
+def get_authority_level(authority_type: str) -> int:
+    """Get authority level from authority type"""
+    return AUTHORITY_LEVELS.get(authority_type, 0)
+
+
+def can_escalate_to(from_authority: str, to_authority: str) -> bool:
+    """Check if complaint can be escalated from one authority to another"""
+    from_level = get_authority_level(from_authority)
+    to_level = get_authority_level(to_authority)
+    return to_level > from_level
 
 
 # ==================== EXPORT ====================
@@ -702,21 +581,20 @@ __all__ = [
     "VisibilityLevel",
     "Gender",
     "StayType",
-    "StudentYear",  # ✅ NEW
+    "StudentYear",
     "VoteType",
     "NotificationType",
     "LLMOperationType",
     "ImageVerificationStatus",
-    "UpdatePriority",  # ✅ NEW
-    "UpdateVisibility",  # ✅ NEW
-    "UpdateCategory",  # ✅ NEW
-    
+    "UpdatePriority",
+    "UpdateVisibility",
+    "UpdateCategory",
     # Lists
     "DEPARTMENTS",
     "CATEGORIES",
     "SPAM_KEYWORDS",
-    "VALID_YEARS",  # ✅ NEW
-    
+    "VALID_YEARS",
+    "ALLOWED_IMAGE_MIMETYPES",
     # Dicts
     "AUTHORITY_LEVELS",
     "LEVEL_TO_AUTHORITY",
@@ -733,15 +611,17 @@ __all__ = [
     "CACHE_TTL",
     "WS_EVENTS",
     "DATE_FORMATS",
-    
+    "RATE_LIMIT_KEYS",
+    "SPAM_DETECTION_THRESHOLDS",
+    "THUMBNAIL_SIZES",
     # Constants
     "VOTE_IMPACT_MULTIPLIER",
     "PRIORITY_AUTO_ESCALATE_THRESHOLD",
     "MIN_COMPLAINT_LENGTH",
     "MAX_COMPLAINT_LENGTH",
-    "MAX_UPDATE_LENGTH",  # ✅ NEW
-    "MIN_UPDATE_LENGTH",  # ✅ NEW
-    "UPDATE_EXPIRY_DAYS",  # ✅ NEW
+    "MAX_UPDATE_LENGTH",
+    "MIN_UPDATE_LENGTH",
+    "UPDATE_EXPIRY_DAYS",
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
     "MIN_PAGE_SIZE",
@@ -749,34 +629,19 @@ __all__ = [
     "MAX_IMAGE_WIDTH",
     "MAX_IMAGE_HEIGHT",
     "IMAGE_QUALITY",
+    "MAX_IMAGE_SIZE_MB",
     "SESSION_TIMEOUT_MINUTES",
     "TOKEN_EXPIRATION_SECONDS",
-    
+    "CROSS_DEPARTMENT_AUTHORITY",
     # Patterns
     "EMAIL_PATTERN",
     "ROLL_NO_PATTERN",
     "PHONE_PATTERN",
     "PASSWORD_PATTERN",
-    
     # Helper Functions
     "get_priority_from_score",
     "is_valid_status_transition",
-    "is_valid_year",  # ✅ NEW
+    "is_valid_year",
+    "get_authority_level",
+    "can_escalate_to",
 ]
-
-# Authority Announcement Categories
-class AnnouncementCategory(str, Enum):
-    """Authority announcement categories"""
-    ANNOUNCEMENT = "Announcement"
-    NOTICE = "Notice"
-    ALERT = "Alert"
-    MAINTENANCE = "Maintenance"
-    EVENT = "Event"
-
-# Announcement Priority
-class AnnouncementPriority(str, Enum):
-    """Announcement priority levels"""
-    LOW = "Low"
-    MEDIUM = "Medium"
-    HIGH = "High"
-    CRITICAL = "Critical"
