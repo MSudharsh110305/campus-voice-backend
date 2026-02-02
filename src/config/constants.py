@@ -763,3 +763,20 @@ __all__ = [
     "is_valid_status_transition",
     "is_valid_year",  # ✅ NEW
 ]
+
+# Authority Announcement Categories
+class AnnouncementCategory(str, Enum):
+    """Authority announcement categories"""
+    ANNOUNCEMENT = "Announcement"
+    NOTICE = "Notice"
+    ALERT = "Alert"
+    MAINTENANCE = "Maintenance"
+    EVENT = "Event"
+
+# Announcement Priority
+class AnnouncementPriority(str, Enum):
+    """Announcement priority levels"""
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"

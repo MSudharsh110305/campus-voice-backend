@@ -24,6 +24,9 @@ from .complaint import (
     ComplaintFilter,
     SpamFlag,
     ImageUploadResponse,
+    CommentCreate,
+    CommentResponse,
+    CommentListResponse,
 )
 
 from .authority import (
@@ -33,8 +36,13 @@ from .authority import (
     AuthorityResponse,
     AuthorityStats,
     AuthorityDashboard,
-    AuthorityUpdate,
+    AuthorityProfileUpdate,
     AuthorityListResponse,
+    # Authority Announcements
+    AuthorityAnnouncementCreate,
+    AuthorityAnnouncementUpdate,
+    AuthorityAnnouncementResponse,
+    AuthorityAnnouncementListResponse,
 )
 
 from .vote import (
@@ -63,7 +71,9 @@ from .common import (
     MessageResponse,
     ValidationError,
     BulkOperationResponse,
+    DateRangeFilter,
 )
+
 
 __all__ = [
     # Student
@@ -86,6 +96,9 @@ __all__ = [
     "ComplaintFilter",
     "SpamFlag",
     "ImageUploadResponse",
+    "CommentCreate",
+    "CommentResponse",
+    "CommentListResponse",
     
     # Authority
     "AuthorityLogin",
@@ -94,8 +107,13 @@ __all__ = [
     "AuthorityResponse",
     "AuthorityStats",
     "AuthorityDashboard",
-    "AuthorityUpdate",
+    "AuthorityProfileUpdate",
     "AuthorityListResponse",
+    # Authority Announcements
+    "AuthorityAnnouncementCreate",
+    "AuthorityAnnouncementUpdate",
+    "AuthorityAnnouncementResponse",
+    "AuthorityAnnouncementListResponse",
     
     # Vote
     "VoteCreate",
@@ -121,4 +139,5 @@ __all__ = [
     "MessageResponse",
     "ValidationError",
     "BulkOperationResponse",
+    "DateRangeFilter",
 ]
