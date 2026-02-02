@@ -222,6 +222,7 @@ class ImageVerificationStatus(str, Enum):
     VERIFIED = "Verified"
     REJECTED = "Rejected"
 
+
 # ==================== AUTHORITY ANNOUNCEMENTS ====================
 
 class AnnouncementCategory(str, Enum):
@@ -239,6 +240,7 @@ class AnnouncementPriority(str, Enum):
     MEDIUM = "Medium"
     HIGH = "High"
     CRITICAL = "Critical"
+
 
 # ==================== AUTHORITY UPDATES ====================
 
@@ -357,17 +359,19 @@ MIN_PAGE_SIZE: int = 1
 
 # ==================== TIME CONSTANTS ====================
 
-AUTO_ESCALATE_HOURS: int = 48
+# ✅ FIX: Add the missing constant
+ESCALATION_THRESHOLD_DAYS: int = 2  # Auto-escalate after 2 days
+AUTO_ESCALATE_HOURS: int = 48  # Same as 2 days in hours
 
 SLA_HOURS: Dict[str, int] = {
-    "Low": 168,
-    "Medium": 72,
-    "High": 24,
-    "Critical": 6,
+    "Low": 168,      # 7 days
+    "Medium": 72,    # 3 days
+    "High": 24,      # 1 day
+    "Critical": 6,   # 6 hours
 }
 
 SESSION_TIMEOUT_MINUTES: int = 60
-TOKEN_EXPIRATION_SECONDS: int = 604800
+TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
 
 
 # ==================== REGEX PATTERNS ====================
@@ -603,9 +607,9 @@ __all__ = [
     "NotificationType",
     "LLMOperationType",
     "ImageVerificationStatus",
+    "AnnouncementCategory",
+    "AnnouncementPriority",
     "UpdatePriority",
-    "AnnouncementCategory",  # ✅ ADD THIS
-    "AnnouncementPriority",  # ✅ ADD THIS
     "UpdateVisibility",
     "UpdateCategory",
     # Lists
@@ -644,6 +648,7 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
     "MIN_PAGE_SIZE",
+    "ESCALATION_THRESHOLD_DAYS",  # ✅ ADD THIS
     "AUTO_ESCALATE_HOURS",
     "MAX_IMAGE_WIDTH",
     "MAX_IMAGE_HEIGHT",
