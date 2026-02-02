@@ -2,9 +2,11 @@
 Common Pydantic schemas used across the application.
 """
 
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 from typing import Optional, Any, Dict, List, Generic, TypeVar
 from datetime import datetime, timezone
+import math
 
 
 T = TypeVar('T')
@@ -105,7 +107,12 @@ class PaginatedResponse(BaseModel, Generic[T]):
         page_size: int
     ) -> "PaginatedResponse[T]":
         """Create paginated response"""
-        total_pages = (total + page_size - 1) // page_size
+        # ✅ IMPROVED: Handle edge case and use clearer calculation
+        if page_size <= 0:
+            page_size = 20  # Default fallback
+        
+        total_pages = math.ceil(total / page_size) if total > 0 else 0
+        
         return cls(
             items=items,
             total=total,
@@ -293,6 +300,16 @@ class DateRangeFilter(BaseModel):
         None,
         description="End date (inclusive)"
     )
+    
+    @field_validator('date_to')
+    @classmethod
+    def validate_date_range(cls, v: Optional[datetime], info: ValidationInfo) -> Optional[datetime]:
+        """Validate that date_to is not before date_from"""
+        if v is not None and 'date_from' in info.data:
+            date_from = info.data['date_from']
+            if date_from is not None and v < date_from:
+                raise ValueError("date_to must be greater than or equal to date_from")
+        return v
     
     model_config = {
         "json_schema_extra": {

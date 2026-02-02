@@ -2,15 +2,21 @@
 Pydantic schemas for Authority endpoints.
 """
 
+
 from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationInfo
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, TYPE_CHECKING
+from datetime import datetime, timezone  # ✅ Added timezone import
+
 from src.config.constants import (
     AuthorityType,
     AnnouncementCategory,
     AnnouncementPriority,
     VisibilityLevel
 )
+
+# ✅ Forward reference to avoid circular imports
+if TYPE_CHECKING:
+    from .complaint import ComplaintResponse
 
 
 class AuthorityLogin(BaseModel):
@@ -166,8 +172,8 @@ class AuthorityDashboard(BaseModel):
     
     profile: AuthorityProfile
     stats: AuthorityStats
-    recent_complaints: List[dict]
-    urgent_complaints: List[dict]
+    recent_complaints: List[dict]  # ✅ Keep as dict for now to avoid circular import in runtime
+    urgent_complaints: List[dict]  # ✅ Can be typed as ComplaintResponse in routes
     unread_notifications: int
     
     model_config = {
@@ -184,7 +190,7 @@ class AuthorityDashboard(BaseModel):
 
 
 class AuthorityProfileUpdate(BaseModel):
-    """Schema for updating authority profile (renamed from AuthorityUpdate for clarity)"""
+    """Schema for updating authority profile"""
     
     name: Optional[str] = Field(None, min_length=2, max_length=255)
     phone: Optional[str] = Field(
@@ -288,7 +294,8 @@ class AuthorityAnnouncementCreate(BaseModel):
     def validate_expires_at(cls, v: Optional[datetime]) -> Optional[datetime]:
         """Validate expiry date is in future"""
         if v is not None:
-            if v <= datetime.utcnow():
+            # ✅ FIXED: Use datetime.now(timezone.utc) instead of deprecated datetime.utcnow()
+            if v <= datetime.now(timezone.utc):
                 raise ValueError("Expiry date must be in the future")
         return v
     
@@ -439,10 +446,10 @@ __all__ = [
     "AuthorityResponse",
     "AuthorityStats",
     "AuthorityDashboard",
-    "AuthorityProfileUpdate",  # ✅ RENAMED from AuthorityUpdate
+    "AuthorityProfileUpdate",
     "AuthorityListResponse",
     
-    # Authority Announcements (NEW)
+    # Authority Announcements
     "AuthorityAnnouncementCreate",
     "AuthorityAnnouncementUpdate",
     "AuthorityAnnouncementResponse",

@@ -38,7 +38,6 @@ from .authority import (
     AuthorityDashboard,
     AuthorityProfileUpdate,
     AuthorityListResponse,
-    # Authority Announcements
     AuthorityAnnouncementCreate,
     AuthorityAnnouncementUpdate,
     AuthorityAnnouncementResponse,
@@ -76,7 +75,7 @@ from .common import (
 
 
 __all__ = [
-    # Student
+    # Student schemas
     "StudentRegister",
     "StudentLogin",
     "StudentProfile",
@@ -86,7 +85,7 @@ __all__ = [
     "PasswordChange",
     "EmailVerification",
     
-    # Complaint
+    # Complaint schemas
     "ComplaintCreate",
     "ComplaintUpdate",
     "ComplaintResponse",
@@ -100,7 +99,7 @@ __all__ = [
     "CommentResponse",
     "CommentListResponse",
     
-    # Authority
+    # Authority schemas
     "AuthorityLogin",
     "AuthorityCreate",
     "AuthorityProfile",
@@ -109,26 +108,25 @@ __all__ = [
     "AuthorityDashboard",
     "AuthorityProfileUpdate",
     "AuthorityListResponse",
-    # Authority Announcements
     "AuthorityAnnouncementCreate",
     "AuthorityAnnouncementUpdate",
     "AuthorityAnnouncementResponse",
     "AuthorityAnnouncementListResponse",
     
-    # Vote
+    # Vote schemas
     "VoteCreate",
     "VoteResponse",
     "VoteStats",
     "VoteDeleteResponse",
     
-    # Notification
+    # Notification schemas
     "NotificationCreate",
     "NotificationResponse",
     "NotificationListResponse",
     "NotificationMarkRead",
     "NotificationUnreadCount",
     
-    # Common
+    # Common schemas
     "SuccessResponse",
     "ErrorResponse",
     "PaginationParams",

@@ -222,6 +222,23 @@ class ImageVerificationStatus(str, Enum):
     VERIFIED = "Verified"
     REJECTED = "Rejected"
 
+# ==================== AUTHORITY ANNOUNCEMENTS ====================
+
+class AnnouncementCategory(str, Enum):
+    """Authority announcement category enums"""
+    ANNOUNCEMENT = "Announcement"
+    NOTICE = "Notice"
+    ALERT = "Alert"
+    MAINTENANCE = "Maintenance"
+    EVENT = "Event"
+
+
+class AnnouncementPriority(str, Enum):
+    """Authority announcement priority enums"""
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    CRITICAL = "Critical"
 
 # ==================== AUTHORITY UPDATES ====================
 
@@ -587,6 +604,8 @@ __all__ = [
     "LLMOperationType",
     "ImageVerificationStatus",
     "UpdatePriority",
+    "AnnouncementCategory",  # ✅ ADD THIS
+    "AnnouncementPriority",  # ✅ ADD THIS
     "UpdateVisibility",
     "UpdateCategory",
     # Lists
