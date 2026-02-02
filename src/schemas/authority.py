@@ -2,10 +2,15 @@
 Pydantic schemas for Authority endpoints.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator, ValidationInfo
 from typing import Optional, List
 from datetime import datetime
-from src.config.constants import AuthorityType
+from src.config.constants import (
+    AuthorityType,
+    AnnouncementCategory,
+    AnnouncementPriority,
+    VisibilityLevel
+)
 
 
 class AuthorityLogin(BaseModel):
@@ -37,7 +42,11 @@ class AuthorityCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    phone: Optional[str] = Field(None, pattern=r'^[6-9]\d{9}$')
+    phone: Optional[str] = Field(
+        None,
+        pattern=r'^[6-9]\d{9}$',
+        description="Indian mobile number (10 digits starting with 6-9)"
+    )
     authority_type: AuthorityType
     department_id: Optional[int] = Field(None, gt=0)
     designation: Optional[str] = Field(None, max_length=255)
@@ -88,7 +97,7 @@ class AuthorityProfile(BaseModel):
                 "designation": "Chief Warden",
                 "authority_level": 5,
                 "is_active": True,
-                "created_at": "2024-01-01T00:00:00"
+                "created_at": "2025-08-15T09:00:00"
             }
         }
     }
@@ -102,6 +111,7 @@ class AuthorityResponse(BaseModel):
     email: str
     authority_type: str
     department_id: Optional[int] = None
+    designation: Optional[str] = None
     token: str
     token_type: str = "Bearer"
     expires_in: int
@@ -114,6 +124,7 @@ class AuthorityResponse(BaseModel):
                 "email": "john.smith@college.edu",
                 "authority_type": "Warden",
                 "department_id": None,
+                "designation": "Chief Warden",
                 "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                 "token_type": "Bearer",
                 "expires_in": 604800
@@ -172,11 +183,15 @@ class AuthorityDashboard(BaseModel):
     }
 
 
-class AuthorityUpdate(BaseModel):
-    """Schema for updating authority profile"""
+class AuthorityProfileUpdate(BaseModel):
+    """Schema for updating authority profile (renamed from AuthorityUpdate for clarity)"""
     
     name: Optional[str] = Field(None, min_length=2, max_length=255)
-    phone: Optional[str] = Field(None, pattern=r'^[6-9]\d{9}$')
+    phone: Optional[str] = Field(
+        None,
+        pattern=r'^[6-9]\d{9}$',
+        description="Indian mobile number (10 digits starting with 6-9)"
+    )
     designation: Optional[str] = Field(None, max_length=255)
     is_active: Optional[bool] = None
     
@@ -207,13 +222,229 @@ class AuthorityListResponse(BaseModel):
     }
 
 
+# ==================== AUTHORITY ANNOUNCEMENTS/UPDATES ====================
+
+
+class AuthorityAnnouncementCreate(BaseModel):
+    """Schema for creating authority announcement/update"""
+    
+    title: str = Field(
+        ...,
+        min_length=5,
+        max_length=255,
+        description="Announcement title",
+        examples=["Important: Hostel Maintenance Schedule"]
+    )
+    content: str = Field(
+        ...,
+        min_length=10,
+        max_length=5000,
+        description="Announcement content/message",
+        examples=["The hostel will undergo routine maintenance from Feb 10-12. Please cooperate."]
+    )
+    category: AnnouncementCategory = Field(
+        ...,
+        description="Announcement category: Announcement, Notice, Alert, Maintenance, Event",
+        examples=["Maintenance"]
+    )
+    priority: AnnouncementPriority = Field(
+        default="Medium",
+        description="Priority level: Low, Medium, High, Critical",
+        examples=["High"]
+    )
+    visibility: VisibilityLevel = Field(
+        default="All Students",
+        description="Who can see this: All Students, Department Only, Hostel Only, Public",
+        examples=["Hostel Only"]
+    )
+    expires_at: Optional[datetime] = Field(
+        None,
+        description="When this announcement expires (optional)",
+        examples=["2026-02-12T23:59:59"]
+    )
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """Validate title"""
+        v = v.strip()
+        if not v:
+            raise ValueError("Title cannot be empty")
+        if v.isupper():
+            raise ValueError("Please avoid writing title in all caps")
+        return v
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        """Validate content"""
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("Content must be at least 10 characters")
+        return v
+    
+    @field_validator('expires_at')
+    @classmethod
+    def validate_expires_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Validate expiry date is in future"""
+        if v is not None:
+            if v <= datetime.utcnow():
+                raise ValueError("Expiry date must be in the future")
+        return v
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "title": "Important: Hostel Maintenance Schedule",
+                "content": "The hostel will undergo routine maintenance from Feb 10-12, 2026. Water supply will be affected from 9 AM to 5 PM. Please store water in advance. We apologize for the inconvenience.",
+                "category": "Maintenance",
+                "priority": "High",
+                "visibility": "Hostel Only",
+                "expires_at": "2026-02-12T23:59:59"
+            }
+        }
+    }
+
+
+class AuthorityAnnouncementUpdate(BaseModel):
+    """Schema for updating authority announcement"""
+    
+    title: Optional[str] = Field(
+        None,
+        min_length=5,
+        max_length=255,
+        description="Updated title"
+    )
+    content: Optional[str] = Field(
+        None,
+        min_length=10,
+        max_length=5000,
+        description="Updated content"
+    )
+    category: Optional[AnnouncementCategory] = None
+    priority: Optional[AnnouncementPriority] = None
+    visibility: Optional[VisibilityLevel] = None
+    expires_at: Optional[datetime] = None
+    is_active: Optional[bool] = Field(
+        None,
+        description="Set to False to hide/archive the announcement"
+    )
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v: Optional[str]) -> Optional[str]:
+        """Validate title"""
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Title cannot be empty")
+            if v.isupper():
+                raise ValueError("Please avoid writing title in all caps")
+        return v
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v: Optional[str]) -> Optional[str]:
+        """Validate content"""
+        if v is not None:
+            v = v.strip()
+            if len(v) < 10:
+                raise ValueError("Content must be at least 10 characters")
+        return v
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "title": "Updated: Hostel Maintenance Postponed",
+                "content": "The maintenance has been postponed to Feb 15-17.",
+                "priority": "Medium",
+                "expires_at": "2026-02-17T23:59:59"
+            }
+        }
+    }
+
+
+class AuthorityAnnouncementResponse(BaseModel):
+    """Schema for authority announcement response"""
+    
+    id: int
+    authority_id: int
+    authority_name: Optional[str] = None
+    authority_type: Optional[str] = None
+    title: str
+    content: str
+    category: str
+    priority: str
+    visibility: str
+    views_count: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    expires_at: Optional[datetime] = None
+    
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 1,
+                "authority_id": 5,
+                "authority_name": "Dr. John Smith",
+                "authority_type": "Warden",
+                "title": "Important: Hostel Maintenance Schedule",
+                "content": "The hostel will undergo routine maintenance...",
+                "category": "Maintenance",
+                "priority": "High",
+                "visibility": "Hostel Only",
+                "views_count": 150,
+                "is_active": True,
+                "created_at": "2026-02-05T10:00:00",
+                "updated_at": "2026-02-05T10:00:00",
+                "expires_at": "2026-02-12T23:59:59"
+            }
+        }
+    }
+
+
+class AuthorityAnnouncementListResponse(BaseModel):
+    """Schema for authority announcement list with pagination"""
+    
+    announcements: List[AuthorityAnnouncementResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    active_count: int
+    expired_count: int
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "announcements": [],
+                "total": 25,
+                "page": 1,
+                "page_size": 10,
+                "total_pages": 3,
+                "active_count": 20,
+                "expired_count": 5
+            }
+        }
+    }
+
+
 __all__ = [
+    # Authority Management
     "AuthorityLogin",
     "AuthorityCreate",
     "AuthorityProfile",
     "AuthorityResponse",
     "AuthorityStats",
     "AuthorityDashboard",
-    "AuthorityUpdate",
+    "AuthorityProfileUpdate",  # ✅ RENAMED from AuthorityUpdate
     "AuthorityListResponse",
+    
+    # Authority Announcements (NEW)
+    "AuthorityAnnouncementCreate",
+    "AuthorityAnnouncementUpdate",
+    "AuthorityAnnouncementResponse",
+    "AuthorityAnnouncementListResponse",
 ]

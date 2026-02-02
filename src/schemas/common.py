@@ -4,7 +4,8 @@ Common Pydantic schemas used across the application.
 
 from pydantic import BaseModel, Field
 from typing import Optional, Any, Dict, List, Generic, TypeVar
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 T = TypeVar('T')
 
@@ -34,7 +35,7 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     error_code: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     model_config = {
         "json_schema_extra": {
@@ -43,7 +44,7 @@ class ErrorResponse(BaseModel):
                 "error": "Invalid credentials",
                 "detail": "Email or password is incorrect",
                 "error_code": "AUTH_FAILED",
-                "timestamp": "2024-01-27T10:00:00"
+                "timestamp": "2026-02-02T10:00:00Z"
             }
         }
     }
@@ -134,19 +135,21 @@ class HealthCheckResponse(BaseModel):
     """Schema for health check response"""
     
     status: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     database: str
     version: str
     uptime_seconds: Optional[float] = None
+    environment: Optional[str] = None
     
     model_config = {
         "json_schema_extra": {
             "example": {
                 "status": "healthy",
-                "timestamp": "2024-01-27T10:00:00",
+                "timestamp": "2026-02-02T10:00:00Z",
                 "database": "connected",
                 "version": "1.0.0",
-                "uptime_seconds": 3600.5
+                "uptime_seconds": 3600.5,
+                "environment": "production"
             }
         }
     }
@@ -176,11 +179,13 @@ class SystemStats(BaseModel):
     total_students: int
     total_authorities: int
     total_complaints: int
+    total_announcements: int = 0
     complaints_by_status: Dict[str, int]
     complaints_by_priority: Dict[str, int]
     complaints_by_category: Dict[str, int]
     avg_resolution_time_hours: Optional[float] = None
     spam_percentage: Optional[float] = None
+    active_students_count: Optional[int] = None
     
     model_config = {
         "json_schema_extra": {
@@ -188,6 +193,7 @@ class SystemStats(BaseModel):
                 "total_students": 1000,
                 "total_authorities": 50,
                 "total_complaints": 500,
+                "total_announcements": 15,
                 "complaints_by_status": {
                     "Raised": 50,
                     "In Progress": 100,
@@ -207,7 +213,8 @@ class SystemStats(BaseModel):
                     "Disciplinary Committee": 50
                 },
                 "avg_resolution_time_hours": 36.5,
-                "spam_percentage": 2.5
+                "spam_percentage": 2.5,
+                "active_students_count": 950
             }
         }
     }
@@ -217,11 +224,13 @@ class MessageResponse(BaseModel):
     """Simple message response"""
     
     message: str
+    success: bool = True
     
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "Operation completed successfully"
+                "message": "Operation completed successfully",
+                "success": True
             }
         }
     }
@@ -251,6 +260,13 @@ class BulkOperationResponse(BaseModel):
     total: int
     errors: Optional[List[Dict[str, Any]]] = None
     
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate percentage"""
+        if self.total == 0:
+            return 0.0
+        return (self.success_count / self.total) * 100
+    
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -261,6 +277,28 @@ class BulkOperationResponse(BaseModel):
                     {"index": 3, "error": "Invalid data"},
                     {"index": 7, "error": "Duplicate entry"}
                 ]
+            }
+        }
+    }
+
+
+class DateRangeFilter(BaseModel):
+    """Schema for date range filtering"""
+    
+    date_from: Optional[datetime] = Field(
+        None,
+        description="Start date (inclusive)"
+    )
+    date_to: Optional[datetime] = Field(
+        None,
+        description="End date (inclusive)"
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "date_from": "2026-01-01T00:00:00Z",
+                "date_to": "2026-02-01T23:59:59Z"
             }
         }
     }
@@ -277,4 +315,5 @@ __all__ = [
     "MessageResponse",
     "ValidationError",
     "BulkOperationResponse",
+    "DateRangeFilter",
 ]
