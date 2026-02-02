@@ -13,10 +13,12 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
+
 Base = declarative_base()
 
 
 # ==================== CORE TABLES ====================
+
 
 class Department(Base):
     """Department model - 13 engineering departments"""
@@ -96,6 +98,7 @@ class Student(Base):
     # Profile
     gender = Column(String(10), nullable=False)
     stay_type = Column(String(20), nullable=False)
+    year = Column(String(20), nullable=False, index=True)  # ✅ NEW: Student year
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False, index=True)
     
     # Status
@@ -116,10 +119,12 @@ class Student(Base):
     __table_args__ = (
         CheckConstraint("gender IN ('Male', 'Female', 'Other')", name="check_gender"),
         CheckConstraint("stay_type IN ('Hostel', 'Day Scholar')", name="check_stay_type"),
+        CheckConstraint("year IN ('1st Year', '2nd Year', '3rd Year', '4th Year')", name="check_year"),  # ✅ NEW
+        Index("idx_student_dept_year_stay", "department_id", "year", "stay_type"),  # ✅ NEW: Composite index for filtering
     )
     
     def __repr__(self):
-        return f"<Student(roll_no={self.roll_no}, name={self.name})>"
+        return f"<Student(roll_no={self.roll_no}, name={self.name}, year={self.year})>"
 
 
 class Authority(Base):
@@ -157,6 +162,7 @@ class Authority(Base):
     )
     status_updates = relationship("StatusUpdate", back_populates="updated_by_authority")
     spam_flags = relationship("Complaint", foreign_keys="Complaint.spam_flagged_by", back_populates="spam_flagged_by_authority")
+    authority_updates = relationship("AuthorityUpdate", back_populates="authority", cascade="all, delete-orphan")  # ✅ NEW
     
     def __repr__(self):
         return f"<Authority(name={self.name}, type={self.authority_type})>"
@@ -262,6 +268,71 @@ class Complaint(Base):
         return f"<Complaint(id={self.id}, status={self.status}, priority={self.priority})>"
 
 
+# ✅ NEW: Authority Updates Table
+class AuthorityUpdate(Base):
+    """Authority update model - announcements and updates from authorities"""
+    __tablename__ = "authority_updates"
+    
+    # Primary Key
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    
+    # Foreign Key
+    authority_id = Column(BigInteger, ForeignKey("authorities.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Content
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    
+    # Categorization
+    category = Column(String(50), nullable=False, index=True)  # Announcement, Policy Change, Event, etc.
+    priority = Column(String(20), nullable=False, index=True)  # Low, Medium, High, Urgent
+    
+    # Visibility & Targeting
+    visibility = Column(String(50), nullable=False, index=True)  # Department, Year, Hostel, Day Scholar, All Students
+    target_departments = Column(ARRAY(String), nullable=True)  # Array of department codes
+    target_years = Column(ARRAY(String), nullable=True)  # Array of years (1st Year, 2nd Year, etc.)
+    target_stay_types = Column(ARRAY(String), nullable=True)  # Array of stay types (Hostel, Day Scholar)
+    
+    # Display Options
+    is_highlighted = Column(Boolean, default=False, nullable=False)  # Show prominently in feed
+    is_pinned = Column(Boolean, default=False, nullable=False)  # Pin to top of feed
+    
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    
+    # Expiration
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    authority = relationship("Authority", back_populates="authority_updates")
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('Announcement', 'Policy Change', 'Event', 'Maintenance', 'Emergency', 'General')",
+            name="check_update_category"
+        ),
+        CheckConstraint(
+            "priority IN ('Low', 'Medium', 'High', 'Urgent')",
+            name="check_update_priority"
+        ),
+        CheckConstraint(
+            "visibility IN ('Department', 'Year', 'Hostel', 'Day Scholar', 'All Students')",
+            name="check_update_visibility"
+        ),
+        Index("idx_authority_update_active_expires", "is_active", "expires_at"),  # Query active, non-expired updates
+        Index("idx_authority_update_priority_created", "priority", "created_at"),  # Sort by priority and date
+        Index("idx_authority_update_visibility", "visibility", "is_active"),  # Filter by visibility
+    )
+    
+    def __repr__(self):
+        return f"<AuthorityUpdate(id={self.id}, title={self.title}, priority={self.priority})>"
+
+
 class Vote(Base):
     """Vote model - upvotes/downvotes on complaints"""
     __tablename__ = "votes"
@@ -321,6 +392,7 @@ class StatusUpdate(Base):
 
 
 # ==================== SUPPORT TABLES ====================
+
 
 class AuthorityRoutingRule(Base):
     """Authority routing rules - complaint routing configuration"""
@@ -549,6 +621,7 @@ __all__ = [
     "Student",
     "Authority",
     "Complaint",
+    "AuthorityUpdate",  # ✅ NEW
     "Vote",
     "StatusUpdate",
     "AuthorityRoutingRule",

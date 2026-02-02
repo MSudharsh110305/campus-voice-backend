@@ -15,10 +15,12 @@ from sqlalchemy.pool import NullPool, QueuePool
 from sqlalchemy import text, event
 from src.config.settings import settings
 
+
 logger = logging.getLogger(__name__)
 
 
 # ==================== ENGINE CREATION ====================
+
 
 def create_engine() -> AsyncEngine:
     """
@@ -33,7 +35,8 @@ def create_engine() -> AsyncEngine:
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,  # Verify connections before using
-        pool_recycle=3600,   # Recycle connections after 1 hour
+        pool_recycle=settings.DB_POOL_RECYCLE,  # ✅ FIXED: Use setting instead of hardcoded value
+        pool_timeout=settings.DB_POOL_TIMEOUT,   # ✅ FIXED: Add pool timeout from settings
         connect_args={
             "server_settings": {
                 "application_name": "CampusVoice",
@@ -46,7 +49,8 @@ def create_engine() -> AsyncEngine:
     
     logger.info(
         f"Database engine created: pool_size={settings.DB_POOL_SIZE}, "
-        f"max_overflow={settings.DB_MAX_OVERFLOW}"
+        f"max_overflow={settings.DB_MAX_OVERFLOW}, "
+        f"pool_recycle={settings.DB_POOL_RECYCLE}s"
     )
     
     return engine
@@ -57,6 +61,7 @@ engine: AsyncEngine = create_engine()
 
 
 # ==================== SESSION FACTORY ====================
+
 
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
@@ -92,6 +97,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 # ==================== DATABASE INITIALIZATION ====================
+
 
 async def create_all_tables():
     """
@@ -184,6 +190,7 @@ async def seed_initial_data(session: AsyncSession):
             category = ComplaintCategory(
                 name=cat_data["name"],
                 description=cat_data["description"],
+                keywords=cat_data.get("keywords", []),  # ✅ FIXED: Add keywords field
             )
             session.add(category)
         
@@ -196,6 +203,7 @@ async def seed_initial_data(session: AsyncSession):
 
 
 # ==================== DATABASE HEALTH CHECK ====================
+
 
 async def health_check() -> bool:
     """
@@ -245,6 +253,8 @@ async def get_db_info() -> dict:
                 "database_size": db_size,
                 "pool_size": settings.DB_POOL_SIZE,
                 "max_overflow": settings.DB_MAX_OVERFLOW,
+                "pool_recycle": settings.DB_POOL_RECYCLE,  # ✅ ADDED: Include in info
+                "pool_timeout": settings.DB_POOL_TIMEOUT,  # ✅ ADDED: Include in info
             }
     except Exception as e:
         logger.error(f"Failed to get database info: {e}")
@@ -255,6 +265,7 @@ async def get_db_info() -> dict:
 
 
 # ==================== CLEANUP ====================
+
 
 async def close_db():
     """
@@ -269,6 +280,7 @@ async def close_db():
 
 
 # ==================== TRANSACTION HELPER ====================
+
 
 async def execute_in_transaction(session: AsyncSession, func, *args, **kwargs):
     """
@@ -295,6 +307,7 @@ async def execute_in_transaction(session: AsyncSession, func, *args, **kwargs):
 
 # ==================== EXPORT ====================
 
+
 __all__ = [
     "engine",
     "AsyncSessionLocal",
@@ -302,6 +315,7 @@ __all__ = [
     "create_all_tables",
     "drop_all_tables",
     "init_db",
+    "seed_initial_data",  # ✅ ADDED: Export for testing
     "health_check",
     "get_db_info",
     "close_db",
