@@ -4,9 +4,7 @@ Token bucket rate limiter implementation.
 
 import time
 import asyncio
-from typing import Dict, Optional
-from collections import defaultdict
-from datetime import datetime, timedelta
+from typing import Dict
 from src.utils.exceptions import RateLimitExceededError
 
 

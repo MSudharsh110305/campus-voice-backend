@@ -3,14 +3,16 @@ JWT utility functions (additional helpers beyond auth_service).
 """
 
 from typing import Optional, Dict, Any
-from datetime import datetime
-from fastapi import Request, HTTPException, status, Depends  # ✅ Import Depends!
+from datetime import datetime, timezone
+from fastapi import Request, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from src.services.auth_service import auth_service
 from src.utils.exceptions import InvalidTokenError, TokenExpiredError
 
+
 security = HTTPBearer()
+
 
 def extract_token_from_header(authorization: str) -> Optional[str]:
     """
@@ -31,6 +33,7 @@ def extract_token_from_header(authorization: str) -> Optional[str]:
     
     return parts[1]
 
+
 def get_current_user_from_token(token: str) -> Dict[str, Any]:
     """
     Get current user info from JWT token.
@@ -49,11 +52,11 @@ def get_current_user_from_token(token: str) -> Dict[str, Any]:
     if not payload:
         raise InvalidTokenError()
     
-    # Check expiration
+    # Check expiration with timezone-aware datetime
     exp = payload.get("exp")
     if exp:
-        exp_datetime = datetime.fromtimestamp(exp)
-        if datetime.utcnow() > exp_datetime:
+        exp_datetime = datetime.fromtimestamp(exp, tz=timezone.utc)
+        if datetime.now(timezone.utc) > exp_datetime:
             raise TokenExpiredError()
     
     return {
@@ -61,6 +64,7 @@ def get_current_user_from_token(token: str) -> Dict[str, Any]:
         "role": payload.get("role"),
         "payload": payload
     }
+
 
 def verify_token_role(token: str, allowed_roles: list) -> bool:
     """
@@ -79,8 +83,9 @@ def verify_token_role(token: str, allowed_roles: list) -> bool:
     except Exception:
         return False
 
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)  # ✅ Already correct
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> Dict[str, Any]:
     """
     FastAPI dependency to get current user from token.
@@ -103,8 +108,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
 async def get_current_student(
-    user: Dict[str, Any] = Depends(get_current_user)  # ✅ FIXED! Added Depends()
+    user: Dict[str, Any] = Depends(get_current_user)
 ) -> str:
     """
     FastAPI dependency to get current student.
@@ -126,8 +132,9 @@ async def get_current_student(
     
     return user.get("user_id")
 
+
 async def get_current_authority(
-    user: Dict[str, Any] = Depends(get_current_user)  # ✅ FIXED! Added Depends()
+    user: Dict[str, Any] = Depends(get_current_user)
 ) -> int:
     """
     FastAPI dependency to get current authority.
@@ -148,6 +155,7 @@ async def get_current_authority(
         )
     
     return int(user.get("user_id"))
+
 
 __all__ = [
     "extract_token_from_header",
