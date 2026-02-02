@@ -13,6 +13,7 @@ from PIL import Image
 from src.config.settings import settings
 from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
 from src.utils.validators import validate_file_extension
+from src.utils.logger import app_logger
 
 
 class FileUploadHandler:
@@ -149,8 +150,15 @@ class FileUploadHandler:
                     quality=85
                 )
         except Exception as e:
-            # If optimization fails, keep original
-            pass
+            # If optimization fails, keep original but log the issue
+            app_logger.warning(
+                f"Image optimization failed for {file_path.name}",
+                extra={
+                    "file_path": str(file_path),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
     
     def delete_file(self, file_path: str) -> bool:
         """

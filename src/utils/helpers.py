@@ -6,7 +6,7 @@ import hashlib
 import secrets
 import string
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 
@@ -94,12 +94,16 @@ def get_time_ago(dt: datetime) -> str:
     Get human-readable time ago string.
     
     Args:
-        dt: Datetime object
+        dt: Datetime object (timezone-aware or naive UTC)
     
     Returns:
         Time ago string (e.g., "2 hours ago")
     """
-    now = datetime.utcnow()
+    # Ensure dt is timezone-aware (assume UTC if naive)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    now = datetime.now(timezone.utc)
     diff = now - dt
     
     seconds = diff.total_seconds()

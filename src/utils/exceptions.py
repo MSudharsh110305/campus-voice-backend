@@ -27,7 +27,9 @@ class AuthenticationError(CampusVoiceException):
     """Authentication failed"""
     
     def __init__(self, message: str = "Authentication failed", **kwargs):
-        super().__init__(message, error_code="AUTH_ERROR", **kwargs)
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "AUTH_ERROR"
+        super().__init__(message, **kwargs)
 
 
 class InvalidCredentialsError(AuthenticationError):
@@ -64,7 +66,9 @@ class AuthorizationError(CampusVoiceException):
     """Authorization/permission error"""
     
     def __init__(self, message: str = "Unauthorized access", **kwargs):
-        super().__init__(message, error_code="UNAUTHORIZED", **kwargs)
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "UNAUTHORIZED"
+        super().__init__(message, **kwargs)
 
 
 class InsufficientPermissionsError(AuthorizationError):
@@ -84,7 +88,9 @@ class ValidationError(CampusVoiceException):
         if field:
             details["field"] = field
         kwargs["details"] = details
-        super().__init__(message, error_code="VALIDATION_ERROR", **kwargs)
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "VALIDATION_ERROR"
+        super().__init__(message, **kwargs)
 
 
 class InvalidInputError(ValidationError):
@@ -148,7 +154,9 @@ class BusinessLogicError(CampusVoiceException):
     """Business logic violation"""
     
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, error_code="BUSINESS_LOGIC_ERROR", **kwargs)
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "BUSINESS_LOGIC_ERROR"
+        super().__init__(message, **kwargs)
 
 
 class SpamDetectedError(BusinessLogicError):
@@ -197,7 +205,9 @@ class FileUploadError(CampusVoiceException):
     """File upload error"""
     
     def __init__(self, message: str, **kwargs):
-        super().__init__(message, error_code="FILE_UPLOAD_ERROR", **kwargs)
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "FILE_UPLOAD_ERROR"
+        super().__init__(message, **kwargs)
 
 
 class InvalidFileTypeError(FileUploadError):
@@ -222,12 +232,12 @@ class ExternalServiceError(CampusVoiceException):
     """External service error"""
     
     def __init__(self, service: str, message: str, **kwargs):
-        super().__init__(
-            f"{service} error: {message}",
-            error_code="EXTERNAL_SERVICE_ERROR",
-            details={"service": service},
-            **kwargs
-        )
+        details = kwargs.get("details", {})
+        details["service"] = service
+        kwargs["details"] = details
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = "EXTERNAL_SERVICE_ERROR"
+        super().__init__(f"{service} error: {message}", **kwargs)
 
 
 class LLMServiceError(ExternalServiceError):
