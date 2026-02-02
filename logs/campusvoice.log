@@ -1,0 +1,30 @@
+2026-02-02 12:57:34 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 12:57:34 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 12:57:34 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://127.0.0.1:3000']
+2026-02-02 13:02:08 | [32mINFO[0m | campusvoice | __init__:shutdown_event:62 | Shutting down CampusVoice API
+2026-02-02 13:02:13 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:02:13 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:02:13 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:04:13 | [32mINFO[0m | campusvoice | __init__:shutdown_event:62 | Shutting down CampusVoice API
+2026-02-02 13:04:18 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:04:18 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:04:18 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:04:59 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:04:59 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:04:59 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:05:48 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: dd8b2d72-0fb8-46be-8682-9a720afe5959 | Errors: [{'field': 'password', 'message': 'String should have at least 8 characters', 'type': 'string_too_short'}]
+2026-02-02 13:09:47 | [32mINFO[0m | campusvoice | __init__:shutdown_event:62 | Shutting down CampusVoice API
+2026-02-02 13:46:13 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:46:13 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:46:13 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:48:12 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: 41f047d9-bf33-4759-8615-ee7ece408b2a | Errors: [{'field': 'password', 'message': 'String should have at least 8 characters', 'type': 'string_too_short'}]
+2026-02-02 13:48:45 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: dfef27ea-1e8c-4f11-b8fb-b5cf1a0695f2 | Errors: [{'field': 'email', 'message': 'value is not a valid email address: An email address must have an @-sign.', 'type': 'value_error'}]
+2026-02-02 13:48:47 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: 709f9c82-98eb-474d-92db-d40fdab06e2f | Errors: [{'field': 'name', 'message': 'Field required', 'type': 'missing'}, {'field': 'email', 'message': 'Field required', 'type': 'missing'}, {'field': 'password', 'message': 'Field required', 'type': 'missing'}, {'field': 'gender', 'message': 'Field required', 'type': 'missing'}, {'field': 'stay_type', 'message': 'Field required', 'type': 'missing'}, {'field': 'year', 'message': 'Field required', 'type': 'missing'}, {'field': 'department_id', 'message': 'Field required', 'type': 'missing'}]
+2026-02-02 13:52:39 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:52:39 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:52:39 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:54:05 | [32mINFO[0m | campusvoice | __init__:startup_event:54 | Starting CampusVoice API in development mode
+2026-02-02 13:54:05 | [32mINFO[0m | campusvoice | __init__:startup_event:55 | Database: localhost:5432/campusvoice
+2026-02-02 13:54:05 | [32mINFO[0m | campusvoice | __init__:startup_event:56 | CORS Origins: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', 'http://localhost:8501', 'http://127.0.0.1:3000']
+2026-02-02 13:56:07 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: 568cd87e-afeb-41c7-b1e5-7ca47f0fec3b | Errors: [{'field': 'email', 'message': 'value is not a valid email address: An email address must have an @-sign.', 'type': 'value_error'}]
+2026-02-02 13:56:09 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: 1f34cf30-e17a-4e00-a23e-4b59cbb4551a | Errors: [{'field': 'name', 'message': 'Field required', 'type': 'missing'}, {'field': 'email', 'message': 'Field required', 'type': 'missing'}, {'field': 'password', 'message': 'Field required', 'type': 'missing'}, {'field': 'gender', 'message': 'Field required', 'type': 'missing'}, {'field': 'stay_type', 'message': 'Field required', 'type': 'missing'}, {'field': 'year', 'message': 'Field required', 'type': 'missing'}, {'field': 'department_id', 'message': 'Field required', 'type': 'missing'}]
