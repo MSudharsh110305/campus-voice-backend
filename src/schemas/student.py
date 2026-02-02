@@ -69,8 +69,6 @@ class StudentRegister(BaseModel):
         v = v.strip().upper()
         if not v:
             raise ValueError("Roll number cannot be empty")
-        # Add custom validation for your college's roll number format
-        # Example: Must be alphanumeric
         if not v.replace(" ", "").isalnum():
             raise ValueError("Roll number must be alphanumeric")
         return v
@@ -98,15 +96,6 @@ class StudentRegister(BaseModel):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(char.islower() for char in v):
             raise ValueError("Password must contain at least one lowercase letter")
-        return v
-    
-    @field_validator('year')
-    @classmethod
-    def validate_year(cls, v: Optional[int]) -> Optional[int]:
-        """Validate academic year"""
-        if v is not None:
-            if v < 1 or v > 10:
-                raise ValueError("Year must be between 1 and 10")
         return v
     
     model_config = {
@@ -205,13 +194,16 @@ class StudentProfileUpdate(BaseModel):
         description="Academic year (1-4 for undergrad, 5+ for postgrad)"
     )
     
-    @field_validator('year')
+    @field_validator('name')
     @classmethod
-    def validate_year(cls, v: Optional[int]) -> Optional[int]:
-        """Validate academic year"""
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        """Validate name"""
         if v is not None:
-            if v < 1 or v > 10:
-                raise ValueError("Year must be between 1 and 10")
+            v = v.strip()
+            if not v:
+                raise ValueError("Name cannot be empty")
+            if any(char.isdigit() for char in v):
+                raise ValueError("Name cannot contain numbers")
         return v
     
     model_config = {
@@ -236,7 +228,7 @@ class StudentResponse(BaseModel):
     department_name: Optional[str] = None
     token: str
     token_type: str = "Bearer"
-    expires_in: int  # seconds
+    expires_in: int
     
     model_config = {
         "json_schema_extra": {
@@ -290,8 +282,8 @@ class PasswordChange(BaseModel):
     
     @field_validator('new_password')
     @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        """Validate new password strength"""
+    def validate_new_password(cls, v: str, info: ValidationInfo) -> str:
+        """Validate new password strength and difference from old"""
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         if not any(char.isdigit() for char in v):
@@ -300,6 +292,10 @@ class PasswordChange(BaseModel):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(char.islower() for char in v):
             raise ValueError("Password must contain at least one lowercase letter")
+        
+        if 'old_password' in info.data and v == info.data['old_password']:
+            raise ValueError("New password must be different from old password")
+        
         return v
     
     @field_validator('confirm_password')

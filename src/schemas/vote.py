@@ -2,8 +2,8 @@
 Pydantic schemas for Vote endpoints.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from typing import Optional, Literal
 from datetime import datetime
 from uuid import UUID
 from src.config.constants import VoteType
@@ -30,11 +30,11 @@ class VoteResponse(BaseModel):
     """Schema for vote response"""
     
     complaint_id: UUID
-    upvotes: int
-    downvotes: int
-    priority_score: float
+    upvotes: int = Field(..., ge=0)
+    downvotes: int = Field(..., ge=0)
+    priority_score: float = Field(..., ge=0.0)
     priority: str
-    user_vote: Optional[str] = None  # Current user's vote
+    user_vote: Optional[Literal["Upvote", "Downvote"]] = None
     
     model_config = {
         "json_schema_extra": {
@@ -53,11 +53,38 @@ class VoteResponse(BaseModel):
 class VoteStats(BaseModel):
     """Schema for vote statistics"""
     
-    total_votes: int
-    upvotes: int
-    downvotes: int
+    total_votes: int = Field(..., ge=0)
+    upvotes: int = Field(..., ge=0)
+    downvotes: int = Field(..., ge=0)
     net_votes: int
-    vote_ratio: float  # upvotes / total_votes
+    vote_ratio: float = Field(..., ge=0.0, le=1.0)
+    
+    @field_validator('vote_ratio')
+    @classmethod
+    def validate_vote_ratio(cls, v: float, info: ValidationInfo) -> float:
+        """Calculate and validate vote ratio"""
+        if 'total_votes' in info.data and 'upvotes' in info.data:
+            total = info.data['total_votes']
+            upvotes = info.data['upvotes']
+            
+            if total == 0:
+                return 0.0
+            
+            expected_ratio = upvotes / total
+            if abs(v - expected_ratio) > 0.01:
+                return expected_ratio
+        
+        return v
+    
+    @field_validator('total_votes')
+    @classmethod
+    def validate_total_votes(cls, v: int, info: ValidationInfo) -> int:
+        """Validate total votes equals upvotes plus downvotes"""
+        if 'upvotes' in info.data and 'downvotes' in info.data:
+            expected_total = info.data['upvotes'] + info.data['downvotes']
+            if v != expected_total:
+                return expected_total
+        return v
     
     model_config = {
         "json_schema_extra": {
@@ -77,9 +104,9 @@ class VoteDeleteResponse(BaseModel):
     
     message: str
     complaint_id: UUID
-    upvotes: int
-    downvotes: int
-    priority_score: float
+    upvotes: int = Field(..., ge=0)
+    downvotes: int = Field(..., ge=0)
+    priority_score: float = Field(..., ge=0.0)
     
     model_config = {
         "json_schema_extra": {

@@ -4,7 +4,7 @@ Pydantic schemas for Complaint endpoints.
 
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from src.config.constants import ComplaintStatus, PriorityLevel, VisibilityLevel
 
@@ -71,7 +71,6 @@ class ComplaintUpdate(BaseModel):
         """Validate reason for certain status changes"""
         if v is not None:
             v = v.strip()
-            # Require reason for certain status changes
             if 'status' in info.data:
                 status = info.data['status']
                 if status in ['Closed', 'Spam'] and not v:
@@ -109,8 +108,6 @@ class ComplaintResponse(BaseModel):
     submitted_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
-    
-    # Only for student's own complaints or admin
     student_roll_no: Optional[str] = None
     student_name: Optional[str] = None
     
@@ -150,7 +147,7 @@ class ComplaintDetailResponse(ComplaintResponse):
     student_year: Optional[int] = None
     complaint_department_id: Optional[int] = None
     is_cross_department: bool = False
-    status_updates: Optional[List[dict]] = []
+    status_updates: Optional[List[dict]] = None
     comments_count: int = 0
     vote_count: int = 0
     
@@ -265,10 +262,20 @@ class ComplaintFilter(BaseModel):
     date_to: Optional[datetime] = None
     search: Optional[str] = Field(
         None,
-        min_length=3,
+        min_length=2,
         max_length=100,
         description="Search in complaint text"
     )
+    
+    @field_validator('date_to')
+    @classmethod
+    def validate_date_range(cls, v: Optional[datetime], info: ValidationInfo) -> Optional[datetime]:
+        """Validate that date_to is not before date_from"""
+        if v is not None and 'date_from' in info.data:
+            date_from = info.data['date_from']
+            if date_from is not None and v < date_from:
+                raise ValueError("date_to must be greater than or equal to date_from")
+        return v
     
     model_config = {
         "json_schema_extra": {
@@ -322,6 +329,8 @@ class ImageUploadResponse(BaseModel):
     verified: bool
     verification_status: str
     message: str
+    file_size_bytes: Optional[int] = None
+    format: Optional[str] = None
     
     model_config = {
         "json_schema_extra": {
@@ -329,7 +338,9 @@ class ImageUploadResponse(BaseModel):
                 "image_url": "/uploads/images/complaint_123_image.jpg",
                 "verified": True,
                 "verification_status": "Verified",
-                "message": "Image uploaded and verified successfully"
+                "message": "Image uploaded and verified successfully",
+                "file_size_bytes": 245678,
+                "format": "jpg"
             }
         }
     }
@@ -370,7 +381,7 @@ class CommentResponse(BaseModel):
     
     id: int
     complaint_id: UUID
-    commenter_type: str  # Student or Authority
+    commenter_type: str
     commenter_name: str
     content: str
     created_at: datetime
