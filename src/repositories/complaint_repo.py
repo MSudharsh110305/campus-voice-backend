@@ -4,7 +4,7 @@ Complaint repository with specialized queries.
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,7 +34,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 selectinload(Complaint.student),
                 selectinload(Complaint.category),
                 selectinload(Complaint.assigned_authority),
-                selectinload(Complaint.complaint_department)
+                selectinload(Complaint.complaint_department),
+                selectinload(Complaint.comments)  # Load comments relationship
             )
             .where(Complaint.id == complaint_id)
         )
@@ -422,7 +423,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         Returns:
             List of complaints needing escalation
         """
-        threshold_time = datetime.utcnow() - timedelta(hours=hours)
+        threshold_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         query = (
             select(Complaint)

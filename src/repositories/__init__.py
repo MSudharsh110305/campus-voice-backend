@@ -9,6 +9,9 @@ from .complaint_repo import ComplaintRepository
 from .authority_repo import AuthorityRepository
 from .vote_repo import VoteRepository
 from .notification_repo import NotificationRepository
+from .comment_repo import CommentRepository
+from .authority_update_repo import AuthorityUpdateRepository
+
 
 __all__ = [
     "BaseRepository",
@@ -17,4 +20,6 @@ __all__ = [
     "AuthorityRepository",
     "VoteRepository",
     "NotificationRepository",
+    "CommentRepository",
+    "AuthorityUpdateRepository",
 ]
