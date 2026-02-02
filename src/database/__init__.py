@@ -10,9 +10,11 @@ from .connection import (
     create_all_tables,
     drop_all_tables,
     init_db,
+    seed_initial_data,  # ✅ NEW: Export for testing/manual seeding
     health_check,
     get_db_info,
     close_db,
+    execute_in_transaction,  # ✅ NEW: Export transaction helper
 )
 
 from .models import (
@@ -22,6 +24,7 @@ from .models import (
     ComplaintCategory,
     Authority,
     Complaint,
+    AuthorityUpdate,  # ✅ NEW: Authority updates/announcements model
     Vote,
     StatusUpdate,
     AuthorityRoutingRule,
@@ -33,6 +36,7 @@ from .models import (
     AdminAuditLog,
 )
 
+
 __all__ = [
     # Connection
     "engine",
@@ -41,9 +45,11 @@ __all__ = [
     "create_all_tables",
     "drop_all_tables",
     "init_db",
+    "seed_initial_data",  # ✅ NEW
     "health_check",
     "get_db_info",
     "close_db",
+    "execute_in_transaction",  # ✅ NEW
     
     # Models
     "Base",
@@ -52,6 +58,7 @@ __all__ = [
     "ComplaintCategory",
     "Authority",
     "Complaint",
+    "AuthorityUpdate",  # ✅ NEW
     "Vote",
     "StatusUpdate",
     "AuthorityRoutingRule",
