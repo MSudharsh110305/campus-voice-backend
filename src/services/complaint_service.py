@@ -1,5 +1,9 @@
 """
 Complaint service with main business logic.
+
+✅ UPDATED: Binary image storage support
+✅ UPDATED: Image verification integration
+✅ UPDATED: No image_url field usage
 """
 
 import logging
@@ -8,6 +12,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from fastapi import UploadFile
 
 from src.database.models import Complaint, Student, ComplaintCategory, StatusUpdate
 from src.repositories.complaint_repo import ComplaintRepository
@@ -16,6 +21,8 @@ from src.services.llm_service import llm_service
 from src.services.authority_service import authority_service
 from src.services.notification_service import notification_service
 from src.services.spam_detection import spam_detection_service
+from src.services.image_verification import image_verification_service
+from src.utils.file_upload import file_upload_handler
 from src.config.constants import PRIORITY_SCORES
 
 logger = logging.getLogger(__name__)
@@ -35,20 +42,22 @@ class ComplaintService:
         category_id: int,
         original_text: str,
         visibility: str = "Public",
-        image_url: Optional[str] = None
+        image_file: Optional[UploadFile] = None  # ✅ NEW: Accept UploadFile
     ) -> Dict[str, Any]:
         """
-        Create a new complaint with full LLM processing.
+        Create a new complaint with full LLM processing and optional image.
+        
+        ✅ UPDATED: Accepts image_file (UploadFile) instead of image_url
         
         Args:
             student_roll_no: Student roll number
             category_id: Category ID
             original_text: Original complaint text
             visibility: Visibility level (Public, Private, Anonymous)
-            image_url: Optional image URL
+            image_file: Optional uploaded image file
         
         Returns:
-            Dictionary with complaint details
+            Dictionary with complaint details and image verification results
         """
         # Get student with department
         student = await self.student_repo.get_with_department(student_roll_no)
@@ -126,7 +135,35 @@ class ComplaintService:
         # ✅ FIXED: Use timezone-aware datetime
         current_time = datetime.now(timezone.utc)
         
-        # Create complaint
+        # ✅ NEW: Process image if provided
+        image_bytes = None
+        image_mimetype = None
+        image_size = None
+        image_filename = None
+        image_verified = False
+        image_verification_status = "Pending"
+        image_verification_message = None
+        
+        if image_file:
+            try:
+                # Read image bytes
+                image_bytes, image_mimetype, image_size, image_filename = await file_upload_handler.read_image_bytes(
+                    image_file, validate=True
+                )
+                
+                # Optimize image
+                image_bytes, image_size = await file_upload_handler.optimize_image_bytes(
+                    image_bytes, image_mimetype
+                )
+                
+                logger.info(f"Image uploaded: {image_filename} ({image_size} bytes)")
+                
+            except Exception as e:
+                logger.error(f"Image upload error: {e}")
+                # Continue without image
+                image_bytes = None
+        
+        # Create complaint (without image verification first)
         complaint = await self.complaint_repo.create(
             student_roll_no=student_roll_no,
             category_id=category_id,
@@ -139,8 +176,44 @@ class ComplaintService:
             is_marked_as_spam=spam_check.get("is_spam", False),
             spam_reason=spam_check.get("reason") if spam_check.get("is_spam") else None,
             complaint_department_id=student.department_id,
-            image_url=image_url
+            # ✅ NEW: Binary image fields
+            has_image=image_bytes is not None,
+            image_data=image_bytes,
+            image_mimetype=image_mimetype,
+            image_size=image_size,
+            image_filename=image_filename,
+            image_verified=False,
+            image_verification_status="Pending" if image_bytes else None
         )
+        
+        # ✅ NEW: Verify image if provided
+        if image_bytes:
+            try:
+                verification_result = await image_verification_service.verify_image_from_bytes(
+                    db=self.db,
+                    complaint_id=complaint.id,
+                    complaint_text=rephrased_text,
+                    image_bytes=image_bytes,
+                    mimetype=image_mimetype
+                )
+                
+                # Update complaint with verification results
+                complaint.image_verified = verification_result["is_relevant"]
+                complaint.image_verification_status = verification_result["status"]
+                await self.db.commit()
+                
+                image_verified = verification_result["is_relevant"]
+                image_verification_status = verification_result["status"]
+                image_verification_message = verification_result["explanation"]
+                
+                logger.info(
+                    f"Image verification for {complaint.id}: "
+                    f"Verified={image_verified}, Status={image_verification_status}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Image verification error: {e}")
+                image_verification_message = f"Verification error: {str(e)}"
         
         # Route to appropriate authority (if not spam)
         authority = None
@@ -178,7 +251,8 @@ class ComplaintService:
         
         logger.info(
             f"Complaint {complaint.id} created successfully - "
-            f"Status: {initial_status}, Priority: {priority}"
+            f"Status: {initial_status}, Priority: {priority}, "
+            f"Has Image: {image_bytes is not None}"
         )
         
         return {
@@ -192,7 +266,131 @@ class ComplaintService:
             "assigned_authority_id": authority.id if authority else None,
             "created_at": current_time.isoformat(),
             "message": "Complaint submitted successfully" if not spam_check.get("is_spam") 
-                      else f"Complaint flagged as spam: {spam_check.get('reason', 'Unknown reason')}"
+                      else f"Complaint flagged as spam: {spam_check.get('reason', 'Unknown reason')}",
+            # ✅ NEW: Image information
+            "has_image": image_bytes is not None,
+            "image_verified": image_verified,
+            "image_verification_status": image_verification_status,
+            "image_verification_message": image_verification_message,
+            "image_filename": image_filename,
+            "image_size": image_size
+        }
+    
+    async def upload_complaint_image(
+        self,
+        complaint_id: UUID,
+        student_roll_no: str,
+        image_file: UploadFile
+    ) -> Dict[str, Any]:
+        """
+        ✅ NEW: Upload/update image for existing complaint.
+        
+        Args:
+            complaint_id: Complaint UUID
+            student_roll_no: Student roll number (for permission check)
+            image_file: Uploaded image file
+        
+        Returns:
+            Image upload and verification results
+        """
+        # Get complaint and verify ownership
+        complaint = await self.complaint_repo.get(complaint_id)
+        if not complaint:
+            raise ValueError("Complaint not found")
+        
+        if complaint.student_roll_no != student_roll_no:
+            raise PermissionError("Not authorized to upload image for this complaint")
+        
+        try:
+            # Read and optimize image
+            image_bytes, image_mimetype, image_size, image_filename = await file_upload_handler.read_image_bytes(
+                image_file, validate=True
+            )
+            
+            image_bytes, image_size = await file_upload_handler.optimize_image_bytes(
+                image_bytes, image_mimetype
+            )
+            
+            # Update complaint with image
+            complaint.has_image = True
+            complaint.image_data = image_bytes
+            complaint.image_mimetype = image_mimetype
+            complaint.image_size = image_size
+            complaint.image_filename = image_filename
+            complaint.image_verified = False
+            complaint.image_verification_status = "Pending"
+            await self.db.commit()
+            
+            # Verify image
+            verification_result = await image_verification_service.verify_image_from_bytes(
+                db=self.db,
+                complaint_id=complaint.id,
+                complaint_text=complaint.rephrased_text or complaint.original_text,
+                image_bytes=image_bytes,
+                mimetype=image_mimetype
+            )
+            
+            # Update verification results
+            complaint.image_verified = verification_result["is_relevant"]
+            complaint.image_verification_status = verification_result["status"]
+            await self.db.commit()
+            
+            logger.info(
+                f"Image uploaded for complaint {complaint_id}: "
+                f"Verified={verification_result['is_relevant']}, "
+                f"Status={verification_result['status']}"
+            )
+            
+            return {
+                "complaint_id": str(complaint_id),
+                "has_image": True,
+                "image_verified": verification_result["is_relevant"],
+                "verification_status": verification_result["status"],
+                "verification_message": verification_result["explanation"],
+                "image_filename": image_filename,
+                "image_size": image_size,
+                "confidence_score": verification_result.get("confidence_score", 0.0)
+            }
+            
+        except Exception as e:
+            logger.error(f"Image upload error for {complaint_id}: {e}")
+            raise ValueError(f"Failed to upload image: {str(e)}")
+    
+    async def get_complaint_image(
+        self,
+        complaint_id: UUID,
+        requester_roll_no: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        ✅ NEW: Get complaint image data.
+        
+        Args:
+            complaint_id: Complaint UUID
+            requester_roll_no: Optional student requesting image (for permission check)
+        
+        Returns:
+            Dictionary with image_bytes, mimetype, and metadata
+        """
+        complaint = await self.complaint_repo.get(complaint_id)
+        if not complaint:
+            raise ValueError("Complaint not found")
+        
+        # Check permission for private complaints
+        if complaint.visibility == "Private":
+            if not requester_roll_no or complaint.student_roll_no != requester_roll_no:
+                raise PermissionError("Not authorized to view this complaint's image")
+        
+        if not complaint.has_image or not complaint.image_data:
+            raise ValueError("Complaint has no image")
+        
+        return {
+            "complaint_id": str(complaint_id),
+            "image_bytes": complaint.image_data,
+            "mimetype": complaint.image_mimetype,
+            "filename": complaint.image_filename,
+            "size": complaint.image_size,
+            "verified": complaint.image_verified,
+            "verification_status": complaint.image_verification_status
         }
     
     async def update_complaint_status(
@@ -320,7 +518,11 @@ class ComplaintService:
                 "downvotes": complaint.downvotes,
                 "created_at": complaint.created_at.isoformat(),
                 "visibility": complaint.visibility,
-                "is_own_complaint": complaint.student_roll_no == student_roll_no
+                "is_own_complaint": complaint.student_roll_no == student_roll_no,
+                # ✅ NEW: Image fields
+                "has_image": complaint.has_image,
+                "image_verified": complaint.image_verified,
+                "image_verification_status": complaint.image_verification_status
             })
         
         return result
@@ -366,7 +568,12 @@ class ComplaintService:
             "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else None,
             "student_roll_no": complaint.student_roll_no if complaint.visibility != "Anonymous" else "Anonymous",
             "is_spam": complaint.is_marked_as_spam,
-            "image_url": complaint.image_url
+            # ✅ NEW: Image fields (no image_url)
+            "has_image": complaint.has_image,
+            "image_verified": complaint.image_verified,
+            "image_verification_status": complaint.image_verification_status,
+            "image_filename": complaint.image_filename,
+            "image_size": complaint.image_size
         }
     
     async def get_student_complaints(
@@ -404,7 +611,10 @@ class ComplaintService:
                 "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else "Unassigned",
                 "upvotes": complaint.upvotes,
                 "downvotes": complaint.downvotes,
-                "visibility": complaint.visibility
+                "visibility": complaint.visibility,
+                # ✅ NEW: Image fields
+                "has_image": complaint.has_image,
+                "image_verified": complaint.image_verified
             })
         
         return result
@@ -472,6 +682,8 @@ class ComplaintService:
         in_progress = sum(1 for c in complaints if c.status == "In Progress")
         raised = sum(1 for c in complaints if c.status == "Raised")
         spam = sum(1 for c in complaints if c.is_marked_as_spam)
+        with_images = sum(1 for c in complaints if c.has_image)  # ✅ NEW
+        verified_images = sum(1 for c in complaints if c.image_verified)  # ✅ NEW
         
         return {
             "total_complaints": total,
@@ -479,7 +691,10 @@ class ComplaintService:
             "in_progress": in_progress,
             "raised": raised,
             "spam_flagged": spam,
-            "resolution_rate": (resolved / total * 100) if total > 0 else 0
+            "resolution_rate": (resolved / total * 100) if total > 0 else 0,
+            # ✅ NEW: Image statistics
+            "with_images": with_images,
+            "verified_images": verified_images
         }
 
 

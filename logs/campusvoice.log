@@ -50,3 +50,15 @@
 2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:194 | Created thumbnail: (200, 150) (482 bytes)
 2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:146 | Optimized image: 315 -> 361 bytes (-14.6% reduction)
 2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:194 | Created thumbnail: (100, 80) (340 bytes)
+2026-02-03 13:15:14 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 13:15:14 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 46613 -> 33762 bytes (27.6% reduction)
+2026-02-03 13:15:23 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 13:15:23 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 1969049 -> 446524 bytes (77.3% reduction), resized from (5472, 3648) to (1920, 1280)
+2026-02-03 14:57:50 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 14:57:50 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 46613 -> 33762 bytes (27.6% reduction)
+2026-02-03 14:57:58 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 14:57:59 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 1969049 -> 446524 bytes (77.3% reduction), resized from (5472, 3648) to (1920, 1280)
+2026-02-03 15:03:16 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 15:03:16 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 46613 -> 33762 bytes (27.6% reduction)
+2026-02-03 15:03:24 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
+2026-02-03 15:03:25 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 1969049 -> 446524 bytes (77.3% reduction), resized from (5472, 3648) to (1920, 1280)
