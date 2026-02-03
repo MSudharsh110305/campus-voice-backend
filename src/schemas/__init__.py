@@ -1,6 +1,8 @@
 """
 Pydantic schemas package initialization.
 All validation models for API requests and responses.
+
+✅ UPDATED: Added ImageVerificationResult and ComplaintImageResponse for binary image storage
 """
 
 from .student import (
@@ -23,7 +25,9 @@ from .complaint import (
     ComplaintListResponse,
     ComplaintFilter,
     SpamFlag,
+    ImageVerificationResult,  # ✅ NEW
     ImageUploadResponse,
+    ComplaintImageResponse,  # ✅ NEW
     CommentCreate,
     CommentResponse,
     CommentListResponse,
@@ -94,7 +98,9 @@ __all__ = [
     "ComplaintListResponse",
     "ComplaintFilter",
     "SpamFlag",
+    "ImageVerificationResult",  # ✅ NEW
     "ImageUploadResponse",
+    "ComplaintImageResponse",  # ✅ NEW
     "CommentCreate",
     "CommentResponse",
     "CommentListResponse",
