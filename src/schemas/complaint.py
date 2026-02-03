@@ -1,5 +1,10 @@
 """
 Pydantic schemas for Complaint endpoints.
+
+✅ FIXED: Removed image_url from create/update schemas
+✅ FIXED: Added has_image, image_verification_status fields
+✅ FIXED: Updated ImageUploadResponse for binary storage
+✅ ADDED: ImageVerificationResult schema for Groq Vision API response
 """
 
 from pydantic import BaseModel, Field, field_validator, ValidationInfo
@@ -29,6 +34,9 @@ class ComplaintCreate(BaseModel):
         default="Public",
         description="Complaint visibility level"
     )
+    
+    # ✅ Image is handled separately via multipart/form-data
+    # No image_url field here
     
     @field_validator('original_text')
     @classmethod
@@ -103,8 +111,21 @@ class ComplaintResponse(BaseModel):
     status: str
     assigned_authority_name: Optional[str] = None
     is_marked_as_spam: bool
-    image_url: Optional[str] = None
-    image_verified: bool
+    
+    # ✅ NEW: Binary image storage fields (replaces image_url)
+    has_image: bool = Field(
+        default=False,
+        description="Whether complaint has an attached image"
+    )
+    image_verified: bool = Field(
+        default=False,
+        description="Whether image has been verified by AI"
+    )
+    image_verification_status: Optional[str] = Field(
+        default=None,
+        description="Image verification status (Pending/Verified/Rejected)"
+    )
+    
     submitted_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
@@ -128,8 +149,9 @@ class ComplaintResponse(BaseModel):
                 "status": "In Progress",
                 "assigned_authority_name": "Hostel Warden",
                 "is_marked_as_spam": False,
-                "image_url": None,
-                "image_verified": False,
+                "has_image": True,
+                "image_verified": True,
+                "image_verification_status": "Verified",
                 "submitted_at": "2026-02-01T10:00:00",
                 "updated_at": "2026-02-01T12:00:00",
                 "resolved_at": None
@@ -151,6 +173,11 @@ class ComplaintDetailResponse(ComplaintResponse):
     comments_count: int = 0
     vote_count: int = 0
     
+    # ✅ NEW: Image metadata (optional, for detailed view)
+    image_filename: Optional[str] = None
+    image_size: Optional[int] = None
+    image_mimetype: Optional[str] = None
+    
     model_config = {
         "from_attributes": True,
         "json_schema_extra": {
@@ -168,8 +195,9 @@ class ComplaintDetailResponse(ComplaintResponse):
                 "status": "In Progress",
                 "assigned_authority_name": "Hostel Warden",
                 "is_marked_as_spam": False,
-                "image_url": None,
-                "image_verified": False,
+                "has_image": True,
+                "image_verified": True,
+                "image_verification_status": "Verified",
                 "submitted_at": "2026-02-01T10:00:00",
                 "updated_at": "2026-02-01T12:00:00",
                 "resolved_at": None,
@@ -181,6 +209,9 @@ class ComplaintDetailResponse(ComplaintResponse):
                 "student_year": 3,
                 "complaint_department_id": 1,
                 "is_cross_department": False,
+                "image_filename": "broken_fan.jpg",
+                "image_size": 245678,
+                "image_mimetype": "image/jpeg",
                 "status_updates": [
                     {
                         "status": "Raised",
@@ -211,7 +242,12 @@ class ComplaintSubmitResponse(BaseModel):
     rephrased_text: Optional[str] = None
     priority: str
     assigned_authority: Optional[str] = None
-    image_required: bool = False
+    
+    # ✅ NEW: Image processing results
+    has_image: bool = False
+    image_verified: bool = False
+    image_verification_status: Optional[str] = None
+    image_verification_message: Optional[str] = None
     
     model_config = {
         "json_schema_extra": {
@@ -222,7 +258,10 @@ class ComplaintSubmitResponse(BaseModel):
                 "rephrased_text": "Issue: The ceiling fan in my hostel room...",
                 "priority": "Medium",
                 "assigned_authority": "Hostel Warden",
-                "image_required": False
+                "has_image": True,
+                "image_verified": True,
+                "image_verification_status": "Verified",
+                "image_verification_message": "Image is relevant to the complaint"
             }
         }
     }
@@ -260,6 +299,17 @@ class ComplaintFilter(BaseModel):
     assigned_to_me: Optional[bool] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
+    
+    # ✅ NEW: Filter by image presence/verification
+    has_image: Optional[bool] = Field(
+        None,
+        description="Filter by complaints with/without images"
+    )
+    image_verified: Optional[bool] = Field(
+        None,
+        description="Filter by verified/unverified images"
+    )
+    
     search: Optional[str] = Field(
         None,
         min_length=2,
@@ -283,6 +333,8 @@ class ComplaintFilter(BaseModel):
                 "status": "Raised",
                 "priority": "High",
                 "category_id": 1,
+                "has_image": True,
+                "image_verified": True,
                 "search": "fan"
             }
         }
@@ -322,25 +374,119 @@ class SpamFlag(BaseModel):
     }
 
 
-class ImageUploadResponse(BaseModel):
-    """Schema for image upload response"""
+# ✅ NEW: Image verification result schema (from Groq Vision API)
+class ImageVerificationResult(BaseModel):
+    """Schema for image verification result from Groq Vision API"""
     
-    image_url: str
-    verified: bool
-    verification_status: str
-    message: str
-    file_size_bytes: Optional[int] = None
-    format: Optional[str] = None
+    is_relevant: bool = Field(
+        ...,
+        description="Whether image is relevant to complaint"
+    )
+    confidence_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score (0.0 to 1.0)"
+    )
+    explanation: str = Field(
+        ...,
+        description="Explanation of verification result"
+    )
+    status: str = Field(
+        ...,
+        description="Verification status (Verified/Rejected/Pending)"
+    )
     
     model_config = {
         "json_schema_extra": {
             "example": {
-                "image_url": "/uploads/images/complaint_123_image.jpg",
-                "verified": True,
+                "is_relevant": True,
+                "confidence_score": 0.95,
+                "explanation": "The image clearly shows a broken ceiling fan, which is directly related to the complaint about a non-functional fan.",
+                "status": "Verified"
+            }
+        }
+    }
+
+
+# ✅ UPDATED: Image upload response for binary storage
+class ImageUploadResponse(BaseModel):
+    """Schema for image upload response (binary database storage)"""
+    
+    complaint_id: UUID = Field(
+        ...,
+        description="Complaint ID that image is attached to"
+    )
+    has_image: bool = Field(
+        ...,
+        description="Whether image was successfully stored"
+    )
+    image_verified: bool = Field(
+        ...,
+        description="Whether image passed AI verification"
+    )
+    verification_status: str = Field(
+        ...,
+        description="Verification status (Pending/Verified/Rejected)"
+    )
+    verification_message: str = Field(
+        ...,
+        description="Human-readable verification message"
+    )
+    
+    # Optional metadata
+    image_filename: Optional[str] = None
+    image_size: Optional[int] = Field(
+        None,
+        description="Image size in bytes"
+    )
+    image_mimetype: Optional[str] = None
+    confidence_score: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="AI confidence score"
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "complaint_id": "123e4567-e89b-12d3-a456-426614174000",
+                "has_image": True,
+                "image_verified": True,
                 "verification_status": "Verified",
-                "message": "Image uploaded and verified successfully",
-                "file_size_bytes": 245678,
-                "format": "jpg"
+                "verification_message": "Image is relevant to the complaint and has been verified successfully",
+                "image_filename": "broken_fan.jpg",
+                "image_size": 245678,
+                "image_mimetype": "image/jpeg",
+                "confidence_score": 0.95
+            }
+        }
+    }
+
+
+# ✅ NEW: Schema for retrieving complaint image (binary data endpoint)
+class ComplaintImageResponse(BaseModel):
+    """Schema for complaint image retrieval metadata"""
+    
+    complaint_id: UUID
+    has_image: bool
+    image_verified: bool
+    image_filename: Optional[str] = None
+    image_size: Optional[int] = None
+    image_mimetype: Optional[str] = None
+    
+    # Note: Actual binary data is returned via StreamingResponse, not JSON
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "complaint_id": "123e4567-e89b-12d3-a456-426614174000",
+                "has_image": True,
+                "image_verified": True,
+                "image_filename": "broken_fan.jpg",
+                "image_size": 245678,
+                "image_mimetype": "image/jpeg"
             }
         }
     }
@@ -428,7 +574,9 @@ __all__ = [
     "ComplaintListResponse",
     "ComplaintFilter",
     "SpamFlag",
+    "ImageVerificationResult",
     "ImageUploadResponse",
+    "ComplaintImageResponse",
     "CommentCreate",
     "CommentResponse",
     "CommentListResponse",
