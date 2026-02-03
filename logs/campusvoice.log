@@ -30,3 +30,23 @@
 2026-02-02 13:56:09 | [33mWARNING[0m | campusvoice | __init__:validation_exception_handler:140 | Validation error | ID: 1f34cf30-e17a-4e00-a23e-4b59cbb4551a | Errors: [{'field': 'name', 'message': 'Field required', 'type': 'missing'}, {'field': 'email', 'message': 'Field required', 'type': 'missing'}, {'field': 'password', 'message': 'Field required', 'type': 'missing'}, {'field': 'gender', 'message': 'Field required', 'type': 'missing'}, {'field': 'stay_type', 'message': 'Field required', 'type': 'missing'}, {'field': 'year', 'message': 'Field required', 'type': 'missing'}, {'field': 'department_id', 'message': 'Field required', 'type': 'missing'}]
 2026-02-02 16:32:02 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
 2026-02-02 16:35:22 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:27:26 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:32:35 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:34:49 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:36:15 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:36:15 | [32mINFO[0m | campusvoice | file_upload:read_image_bytes:85 | Read image bytes: test.jpg
+2026-02-03 12:36:15 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:132 | Resized image from (1920, 1280) to fit 1920x1920
+2026-02-03 12:36:15 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:191 | Created thumbnail: (200, 150) (482 bytes)
+2026-02-03 12:36:15 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:191 | Created thumbnail: (100, 80) (340 bytes)
+2026-02-03 12:37:25 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:37:25 | [32mINFO[0m | campusvoice | file_upload:read_image_bytes:85 | Read image bytes: test.jpg
+2026-02-03 12:37:25 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:132 | Resized image from (1920, 1280) to fit 1920x1920
+2026-02-03 12:37:25 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:191 | Created thumbnail: (200, 150) (482 bytes)
+2026-02-03 12:37:25 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:191 | Created thumbnail: (100, 80) (340 bytes)
+2026-02-03 12:39:04 | [32mINFO[0m | test_logger | logger:log_with_context:140 | Test message
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:read_image_bytes:86 | Read image bytes: test.jpg
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:133 | Resized image from (1920, 1280) to fit 1920x1920
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:146 | Optimized image: 94629 -> 14688 bytes (84.5% reduction)
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:194 | Created thumbnail: (200, 150) (482 bytes)
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:146 | Optimized image: 315 -> 361 bytes (-14.6% reduction)
+2026-02-03 12:39:04 | [32mINFO[0m | campusvoice | file_upload:create_thumbnail:194 | Created thumbnail: (100, 80) (340 bytes)
