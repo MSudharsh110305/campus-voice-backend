@@ -1,5 +1,8 @@
 """
 Pydantic schemas for Notification endpoints.
+
+✅ ADDED: UnreadCountResponse (alias for NotificationUnreadCount)
+✅ Maintains backward compatibility with test_schemas.py
 """
 
 from pydantic import BaseModel, Field, field_validator
@@ -135,10 +138,15 @@ class NotificationUnreadCount(BaseModel):
     }
 
 
+# ✅ NEW: Alias for students.py import compatibility
+UnreadCountResponse = NotificationUnreadCount
+
+
 __all__ = [
     "NotificationCreate",
     "NotificationResponse",
     "NotificationListResponse",
     "NotificationMarkRead",
     "NotificationUnreadCount",
+    "UnreadCountResponse",  # ✅ ADDED: Alias for backward compatibility
 ]

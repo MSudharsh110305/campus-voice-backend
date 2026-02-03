@@ -1,19 +1,64 @@
 """
 API package initialization.
+
 FastAPI application setup and route registration.
+
+✅ FIXED: Proper lifespan context manager instead of deprecated events
+✅ FIXED: Import from src.database.connection
+✅ ADDED: Database initialization on startup
+✅ ADDED: Comprehensive exception handlers
+✅ ADDED: Request ID tracking
 """
+
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.config.settings import settings
 from src.middleware import setup_middleware
 from src.api.routes import create_api_router
-from src.utils.logger import app_logger
 from src.utils.exceptions import CampusVoiceException, to_http_exception
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    ✅ FIXED: Lifespan context manager for startup/shutdown.
+    
+    Replaces deprecated @app.on_event("startup") and @app.on_event("shutdown").
+    """
+    # Startup
+    logger.info(f"🚀 Starting CampusVoice API in {settings.ENVIRONMENT} mode")
+    logger.info(f"📊 Database: {settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'Local'}")
+    logger.info(f"🌐 CORS Origins: {settings.CORS_ORIGINS}")
+    
+    # Initialize database (optional - tables should already exist from migrations)
+    try:
+        from src.database.connection import init_db
+        await init_db()
+        logger.info("✅ Database connection verified")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Don't raise - let health checks handle it
+    
+    yield  # Application runs here
+    
+    # Shutdown
+    logger.info("🛑 Shutting down CampusVoice API")
+    
+    # Close database connections
+    try:
+        from src.database.connection import engine
+        await engine.dispose()
+        logger.info("✅ Database connections closed")
+    except Exception as e:
+        logger.error(f"❌ Error during shutdown: {e}")
 
 
 def create_app() -> FastAPI:
@@ -23,14 +68,15 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application
     """
-    # Create FastAPI app
+    # Create FastAPI app with lifespan
     app = FastAPI(
         title="CampusVoice API",
-        description="Campus Complaint Management System with AI-powered categorization",
+        description="Campus Complaint Management System with AI-powered categorization and intelligent routing",
         version="1.0.0",
         docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
         redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
         openapi_url="/openapi.json" if settings.ENVIRONMENT != "production" else None,
+        lifespan=lifespan,  # ✅ FIXED: Use lifespan instead of deprecated events
     )
     
     # Setup middleware
@@ -44,30 +90,22 @@ def create_app() -> FastAPI:
     # Setup exception handlers
     setup_exception_handlers(app)
     
-    # Startup event
-    @app.on_event("startup")
-    async def startup_event():
-        """Execute on application startup."""
-        app_logger.info(f"Starting CampusVoice API in {settings.ENVIRONMENT} mode")
-        app_logger.info(f"Database: {settings.DATABASE_URL.split('@')[1] if '@' in settings.DATABASE_URL else 'SQLite'}")
-        app_logger.info(f"CORS Origins: {settings.CORS_ORIGINS}")
-    
-    # Shutdown event
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """Execute on application shutdown."""
-        app_logger.info("Shutting down CampusVoice API")
-    
     # Root endpoint
     @app.get("/", tags=["Root"])
     async def root():
-        """Root endpoint with API information."""
+        """
+        Root endpoint with API information.
+        
+        Returns basic service information and links to documentation.
+        """
         return {
             "service": "CampusVoice API",
             "version": "1.0.0",
             "status": "running",
+            "environment": settings.ENVIRONMENT,
             "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled",
-            "health": "/health"
+            "health": "/health",
+            "api_prefix": "/api"
         }
     
     return app
@@ -77,19 +115,30 @@ def setup_exception_handlers(app: FastAPI):
     """
     Setup global exception handlers.
     
+    Handles:
+    - Custom CampusVoiceException
+    - HTTP exceptions
+    - Validation errors
+    - Unhandled exceptions
+    
     Args:
         app: FastAPI application
     """
     
     @app.exception_handler(CampusVoiceException)
     async def campus_voice_exception_handler(request: Request, exc: CampusVoiceException):
-        """Handle CampusVoiceException."""
+        """
+        Handle custom CampusVoiceException.
+        
+        Converts application exceptions to proper HTTP responses.
+        """
         http_exc = to_http_exception(exc)
         request_id = getattr(request.state, "request_id", "unknown")
         
-        app_logger.warning(
+        logger.warning(
             f"Application error | "
             f"ID: {request_id} | "
+            f"Path: {request.url.path} | "
             f"Code: {exc.error_code} | "
             f"Message: {exc.message}"
         )
@@ -107,8 +156,20 @@ def setup_exception_handlers(app: FastAPI):
     
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-        """Handle HTTPException."""
+        """
+        Handle standard HTTP exceptions.
+        
+        Provides consistent error response format.
+        """
         request_id = getattr(request.state, "request_id", "unknown")
+        
+        logger.warning(
+            f"HTTP exception | "
+            f"ID: {request_id} | "
+            f"Path: {request.url.path} | "
+            f"Status: {exc.status_code} | "
+            f"Detail: {exc.detail}"
+        )
         
         return JSONResponse(
             status_code=exc.status_code,
@@ -122,21 +183,28 @@ def setup_exception_handlers(app: FastAPI):
     
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        """Handle validation errors."""
+        """
+        Handle Pydantic validation errors.
+        
+        Formats validation errors in a user-friendly way.
+        """
         request_id = getattr(request.state, "request_id", "unknown")
         
+        # Format validation errors
         errors = []
         for error in exc.errors():
+            field_path = ".".join(str(x) for x in error["loc"][1:]) if len(error["loc"]) > 1 else str(error["loc"][0])
             errors.append({
-                "field": ".".join(str(x) for x in error["loc"][1:]),
+                "field": field_path,
                 "message": error["msg"],
                 "type": error["type"]
             })
         
-        app_logger.warning(
+        logger.warning(
             f"Validation error | "
             f"ID: {request_id} | "
-            f"Errors: {errors}"
+            f"Path: {request.url.path} | "
+            f"Errors: {len(errors)}"
         )
         
         return JSONResponse(
@@ -152,12 +220,17 @@ def setup_exception_handlers(app: FastAPI):
     
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        """Handle all unhandled exceptions."""
+        """
+        Handle all unhandled exceptions.
+        
+        Last resort error handler for unexpected errors.
+        """
         request_id = getattr(request.state, "request_id", "unknown")
         
-        app_logger.error(
+        logger.error(
             f"Unhandled exception | "
             f"ID: {request_id} | "
+            f"Path: {request.url.path} | "
             f"Type: {type(exc).__name__} | "
             f"Message: {str(exc)}",
             exc_info=True
@@ -166,8 +239,13 @@ def setup_exception_handlers(app: FastAPI):
         # In production, don't expose internal errors
         if settings.ENVIRONMENT == "production":
             error_message = "Internal server error"
+            error_details = None
         else:
             error_message = str(exc)
+            error_details = {
+                "type": type(exc).__name__,
+                "traceback": str(exc.__traceback__) if hasattr(exc, '__traceback__') else None
+            }
         
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -175,6 +253,7 @@ def setup_exception_handlers(app: FastAPI):
                 "success": False,
                 "error": error_message,
                 "error_code": "INTERNAL_ERROR",
+                "details": error_details,
                 "request_id": request_id
             }
         )

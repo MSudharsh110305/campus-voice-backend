@@ -1,13 +1,23 @@
 """
 Database reset script.
-⚠️ WARNING: This will DROP ALL TABLES and recreate them!
+
+⚠️  WARNING: This will DROP ALL TABLES and recreate them!
+
+✅ FIXED: Correct table names for verification
 """
 
 import asyncio
 from sqlalchemy import text
+
 from src.database.connection import AsyncSessionLocal, engine
-from src.database.models import Base
-from src.utils.logger import app_logger
+from src.database.models import (
+    Base,
+    Student, Authority, Department, ComplaintCategory,
+    Complaint, Vote, StatusUpdate, AuthorityUpdate, Notification
+)
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 async def reset_database():
@@ -18,6 +28,7 @@ async def reset_database():
     
     # Confirm
     response = input("\nAre you sure you want to reset the database? (yes/no): ")
+    
     if response.lower() != "yes":
         print("❌ Reset cancelled")
         return
@@ -38,15 +49,17 @@ async def reset_database():
         # Step 3: Verify tables
         print("\n3. Verifying tables...")
         async with AsyncSessionLocal() as session:
-            # Check if key tables exist
+            # ✅ FIXED: Check correct table names
             tables_to_check = [
                 "departments",
+                "categories",                # ✅ Changed from complaint_categories
                 "students",
                 "authorities",
-                "complaint_categories",
                 "complaints",
-                "votes",
-                "notifications"
+                "complaint_votes",           # ✅ Changed from votes
+                "complaint_status_history",  # ✅ Added
+                "authority_updates",         # ✅ Added
+                "student_notifications"      # ✅ Changed from notifications
             ]
             
             for table in tables_to_check:
@@ -63,9 +76,9 @@ async def reset_database():
         print("✅ DATABASE RESET COMPLETE!")
         print("=" * 80)
         print("\n💡 Next steps:")
-        print("   1. Run 'python init_database.py' to seed initial data")
-        print("   2. Run 'python check_database.py' to verify")
-        
+        print("   1. Run 'python scripts/setup_database.py' to seed initial data")
+        print("   2. Run 'python main.py' to start the application")
+    
     except Exception as e:
         print(f"\n❌ Reset failed: {e}")
         import traceback
