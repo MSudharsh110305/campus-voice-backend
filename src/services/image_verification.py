@@ -1,11 +1,15 @@
 """
 Image verification service using Groq Vision API.
+
+✅ UPDATED: Uses data URIs from database (binary storage)
+✅ UPDATED: Returns ImageVerificationResult schema format
+✅ UPDATED: No file path dependencies
 """
 
 import logging
 import base64
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from uuid import UUID
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,32 +32,45 @@ class ImageVerificationService:
         self.temperature = 0.2  # Lower for consistent results
         self.max_tokens = 1000
     
-    async def verify_image(
+    async def verify_image_from_bytes(
         self,
         db: AsyncSession,
         complaint_id: UUID,
         complaint_text: str,
-        image_url: str,
+        image_bytes: bytes,
+        mimetype: str,
         image_description: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Verify if image is relevant to complaint using Groq Vision API.
         
+        ✅ NEW: Accepts image_bytes instead of image_url
+        
         Args:
             db: Database session
             complaint_id: Complaint UUID
             complaint_text: Complaint text
-            image_url: Image URL (can be base64 or HTTP URL)
+            image_bytes: Image bytes from database
+            mimetype: Image MIME type (e.g., "image/jpeg")
             image_description: Optional image description
         
         Returns:
-            Verification result with is_relevant, confidence, reason
+            Verification result matching ImageVerificationResult schema:
+            {
+                "is_relevant": bool,
+                "confidence_score": float (0.0-1.0),
+                "explanation": str,
+                "status": str ("Verified" | "Rejected" | "Pending")
+            }
         """
         try:
+            # Convert bytes to data URI
+            data_uri = self.encode_bytes_to_data_uri(image_bytes, mimetype)
+            
             # Use LLM Vision to verify relevance
             result = await self.verify_image_relevance(
                 complaint_text=complaint_text,
-                image_url=image_url,
+                image_data_uri=data_uri,
                 image_description=image_description
             )
             
@@ -61,17 +78,16 @@ class ImageVerificationService:
             from src.database.models import ImageVerificationLog
             log = ImageVerificationLog(
                 complaint_id=complaint_id,
-                image_url=image_url,
                 is_relevant=result["is_relevant"],
-                confidence_score=result["confidence"],
-                rejection_reason=result["reason"] if not result["is_relevant"] else None
+                confidence_score=result["confidence_score"],
+                rejection_reason=result["explanation"] if not result["is_relevant"] else None
             )
             db.add(log)
             await db.commit()
             
             logger.info(
                 f"Image verification for {complaint_id}: "
-                f"Relevant={result['is_relevant']}, Confidence={result['confidence']}"
+                f"Relevant={result['is_relevant']}, Confidence={result['confidence_score']}"
             )
             
             return result
@@ -81,9 +97,9 @@ class ImageVerificationService:
             # Fallback to accepting image if API fails
             return {
                 "is_relevant": True,
-                "confidence": 0.5,
-                "reason": f"Verification error, accepted by default: {str(e)}",
-                "status": "error"
+                "confidence_score": 0.5,
+                "explanation": f"Verification error, accepted by default: {str(e)}",
+                "status": "Pending"
             }
     
     @retry(
@@ -94,35 +110,36 @@ class ImageVerificationService:
     async def verify_image_relevance(
         self,
         complaint_text: str,
-        image_url: str,
+        image_data_uri: str,
         image_description: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Verify if image is relevant to complaint using Groq Vision API.
         
+        ✅ UPDATED: Accepts data_uri directly (from database)
+        
         Args:
             complaint_text: Complaint text
-            image_url: Image URL or base64 data URI
+            image_data_uri: Base64 data URI (data:image/jpeg;base64,...)
             image_description: Optional image description
         
         Returns:
-            Dictionary with is_relevant, confidence, reason, analysis
+            Dictionary matching ImageVerificationResult schema:
+            {
+                "is_relevant": bool,
+                "confidence_score": float (0.0-1.0),
+                "explanation": str,
+                "status": str
+            }
         """
         try:
+            # Validate data URI
+            if not image_data_uri.startswith("data:"):
+                logger.error(f"Invalid data URI format: {image_data_uri[:50]}...")
+                return self._fallback_verification(complaint_text, image_description)
+            
             # Build verification prompt
             prompt = self._build_verification_prompt(complaint_text, image_description)
-            
-            # Prepare image data
-            # Check if image_url is already a data URI
-            if image_url.startswith("data:"):
-                image_data_uri = image_url
-            elif image_url.startswith("http"):
-                # Download and encode if HTTP URL
-                image_data_uri = await self._download_and_encode_image(image_url)
-            else:
-                # Assume it's a file path or base64 string
-                logger.warning(f"Unsupported image URL format: {image_url[:50]}...")
-                return self._fallback_verification(complaint_text, image_description)
             
             # Call Groq Vision API
             response = await asyncio.to_thread(
@@ -156,14 +173,16 @@ class ImageVerificationService:
             import json
             try:
                 # Try to parse as JSON
-                result = json.loads(content)
+                raw_result = json.loads(content)
+                # ✅ Transform to ImageVerificationResult schema format
+                result = self._transform_to_schema_format(raw_result, complaint_text)
             except json.JSONDecodeError:
                 # If not JSON, parse manually
                 result = self._parse_vision_response(content, complaint_text)
             
             logger.info(
                 f"Vision API verification: Relevant={result['is_relevant']}, "
-                f"Confidence={result['confidence']}"
+                f"Confidence={result['confidence_score']}"
             )
             
             return result
@@ -233,8 +252,61 @@ Analyze the provided image and respond with JSON:"""
         
         return base_prompt
     
+    def _transform_to_schema_format(
+        self,
+        raw_result: Dict[str, Any],
+        complaint_text: str
+    ) -> Dict[str, Any]:
+        """
+        ✅ NEW: Transform raw API response to ImageVerificationResult schema format
+        
+        Args:
+            raw_result: Raw response from Vision API
+            complaint_text: Original complaint text
+        
+        Returns:
+            Dictionary matching ImageVerificationResult schema
+        """
+        is_relevant = raw_result.get("is_relevant", False)
+        confidence = raw_result.get("confidence", 0.5)
+        reason = raw_result.get("reason", "No reason provided")
+        is_appropriate = raw_result.get("is_appropriate", is_relevant)
+        
+        # Combine reason with additional details
+        detected_objects = raw_result.get("detected_objects", [])
+        visible_issues = raw_result.get("visible_issues", [])
+        quality_rating = raw_result.get("quality_rating", "Unknown")
+        
+        explanation_parts = [reason]
+        if detected_objects:
+            explanation_parts.append(f"Detected: {', '.join(detected_objects[:5])}")
+        if visible_issues:
+            explanation_parts.append(f"Issues: {', '.join(visible_issues[:3])}")
+        explanation_parts.append(f"Quality: {quality_rating}")
+        
+        explanation = ". ".join(explanation_parts)
+        
+        # Determine status
+        if is_relevant and is_appropriate:
+            status = "Verified"
+        elif not is_relevant or not is_appropriate:
+            status = "Rejected"
+        else:
+            status = "Pending"
+        
+        return {
+            "is_relevant": is_relevant and is_appropriate,
+            "confidence_score": float(confidence),
+            "explanation": explanation[:500],  # Limit length
+            "status": status
+        }
+    
     def _parse_vision_response(self, content: str, complaint_text: str) -> Dict[str, Any]:
-        """Parse vision API response if not JSON"""
+        """
+        Parse vision API response if not JSON
+        
+        ✅ UPDATED: Returns ImageVerificationResult schema format
+        """
         
         content_lower = content.lower()
         
@@ -256,41 +328,15 @@ Analyze the provided image and respond with JSON:"""
         is_relevant = relevant_count > irrelevant_count
         confidence = min((max(relevant_count, irrelevant_count) / 5.0), 1.0)
         
+        explanation = content[:200] + "..." if len(content) > 200 else content
+        status = "Verified" if is_relevant else "Rejected"
+        
         return {
             "is_relevant": is_relevant,
-            "confidence": confidence,
-            "reason": content[:200] + "..." if len(content) > 200 else content,
-            "detected_objects": [],
-            "visible_issues": [],
-            "quality_rating": "Unknown",
-            "is_appropriate": is_relevant,
-            "status": "parsed"
+            "confidence_score": confidence,
+            "explanation": explanation,
+            "status": status
         }
-    
-    async def _download_and_encode_image(self, image_url: str) -> str:
-        """Download image from URL and encode to base64 data URI"""
-        
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(image_url)
-                response.raise_for_status()
-                
-                # Get content type
-                content_type = response.headers.get("content-type", "image/jpeg")
-                
-                # Encode to base64
-                image_bytes = response.content
-                base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                
-                # Create data URI
-                data_uri = f"data:{content_type};base64,{base64_image}"
-                
-                logger.info(f"Downloaded and encoded image from {image_url[:50]}...")
-                return data_uri
-                
-        except Exception as e:
-            logger.error(f"Failed to download image from {image_url}: {e}")
-            raise
     
     def _fallback_verification(
         self,
@@ -300,19 +346,17 @@ Analyze the provided image and respond with JSON:"""
         """
         Fallback verification using keyword matching.
         Used when Vision API fails.
+        
+        ✅ UPDATED: Returns ImageVerificationResult schema format
         """
         
         if not image_description:
             # No description, accept by default
             return {
                 "is_relevant": True,
-                "confidence": 0.6,
-                "reason": "No image description provided, accepting by default (Vision API unavailable)",
-                "detected_objects": [],
-                "visible_issues": [],
-                "quality_rating": "Unknown",
-                "is_appropriate": True,
-                "status": "fallback"
+                "confidence_score": 0.6,
+                "explanation": "No image description provided, accepting by default (Vision API unavailable)",
+                "status": "Pending"
             }
         
         # Check if description relates to complaint
@@ -332,34 +376,57 @@ Analyze the provided image and respond with JSON:"""
         relevance_score = len(common_words) / max(len(text_words), 1)
         is_relevant = relevance_score > 0.1
         
+        explanation = f"Keyword matching: Found {len(common_words)} common keywords (Vision API fallback)"
+        if common_words:
+            explanation += f" - {', '.join(list(common_words)[:5])}"
+        
         return {
             "is_relevant": is_relevant,
-            "confidence": min(relevance_score * 2, 1.0),
-            "reason": f"Keyword matching: Found {len(common_words)} common keywords (Vision API fallback)",
-            "detected_objects": list(common_words),
-            "visible_issues": [],
-            "quality_rating": "Unknown",
-            "is_appropriate": is_relevant,
-            "status": "fallback"
+            "confidence_score": min(relevance_score * 2, 1.0),
+            "explanation": explanation,
+            "status": "Verified" if is_relevant else "Rejected"
         }
     
-    def encode_uploaded_file_to_data_uri(
+    def encode_bytes_to_data_uri(
         self,
-        file_bytes: bytes,
-        mime_type: str = "image/jpeg"
+        image_bytes: bytes,
+        mimetype: str = "image/jpeg"
     ) -> str:
         """
-        Encode uploaded file bytes to base64 data URI.
+        ✅ NEW: Encode image bytes to base64 data URI.
         
         Args:
-            file_bytes: Image file bytes
-            mime_type: MIME type (e.g., "image/jpeg", "image/png")
+            image_bytes: Image bytes from database
+            mimetype: MIME type (e.g., "image/jpeg", "image/png")
         
         Returns:
-            Data URI string
+            Data URI string (data:image/jpeg;base64,...)
         """
-        base64_image = base64.b64encode(file_bytes).decode('utf-8')
-        return f"data:{mime_type};base64,{base64_image}"
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        return f"data:{mimetype};base64,{base64_image}"
+    
+    def decode_data_uri_to_bytes(
+        self,
+        data_uri: str
+    ) -> Tuple[bytes, str]:
+        """
+        ✅ NEW: Decode data URI back to bytes.
+        
+        Args:
+            data_uri: Data URI string
+        
+        Returns:
+            Tuple of (image_bytes, mimetype)
+        """
+        try:
+            # Parse data URI: data:image/jpeg;base64,ABC123...
+            header, encoded = data_uri.split(",", 1)
+            mimetype = header.split(";")[0].split(":")[1]
+            image_bytes = base64.b64decode(encoded)
+            return image_bytes, mimetype
+        except Exception as e:
+            logger.error(f"Failed to decode data URI: {e}")
+            raise ValueError(f"Invalid data URI format: {str(e)}")
 
 
 # Create global instance
