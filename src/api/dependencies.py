@@ -1,17 +1,25 @@
 """
 FastAPI dependencies for dependency injection.
-Database sessions, authentication, authorization, pagination, etc.
+
+Database sessions, authentication, authorization, pagination, validation, etc.
+
+✅ UPDATED: Fixed import to use src.database.connection
+✅ UPDATED: Added visibility checking, complaint validation, notification helpers
+✅ UPDATED: Added proper service dependencies
+✅ UPDATED: Enhanced filter classes with proper validation
 """
 
 import logging
-from typing import Optional, Generator, AsyncGenerator, Dict, Any
+from typing import Optional, Generator, AsyncGenerator, Dict, Any, Tuple
 from functools import wraps
+from uuid import UUID
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, status, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.session import get_db as get_db_session
+from src.database.connection import get_db as get_db_session  # ✅ FIXED IMPORT
 from src.repositories.student_repo import StudentRepository
 from src.repositories.authority_repo import AuthorityRepository
 from src.services.auth_service import auth_service
@@ -284,6 +292,14 @@ class PaginationParams:
         self.skip = skip
         self.limit = limit
         self.page = (skip // limit) + 1
+    
+    def to_dict(self) -> Dict[str, int]:
+        """Convert to dictionary."""
+        return {
+            "skip": self.skip,
+            "limit": self.limit,
+            "page": self.page
+        }
 
 
 def get_pagination() -> PaginationParams:
@@ -309,12 +325,14 @@ class ComplaintFilters:
     
     def __init__(
         self,
-        status: Optional[str] = Query(None, description="Filter by status"),
-        priority: Optional[str] = Query(None, description="Filter by priority"),
-        category_id: Optional[int] = Query(None, description="Filter by category"),
-        department_id: Optional[int] = Query(None, description="Filter by department"),
-        date_from: Optional[str] = Query(None, description="Filter from date (ISO format)"),
-        date_to: Optional[str] = Query(None, description="Filter to date (ISO format)")
+        status: Optional[str] = Query(None, description="Filter by status (Raised, In Progress, Resolved, Closed)"),
+        priority: Optional[str] = Query(None, description="Filter by priority (Low, Medium, High, Critical)"),
+        category_id: Optional[int] = Query(None, description="Filter by category ID"),
+        department_id: Optional[int] = Query(None, description="Filter by department ID"),
+        date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
+        date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
+        has_image: Optional[bool] = Query(None, description="Filter by image presence"),
+        is_verified: Optional[bool] = Query(None, description="Filter by image verification status")
     ):
         self.status = status
         self.priority = priority
@@ -322,6 +340,23 @@ class ComplaintFilters:
         self.department_id = department_id
         self.date_from = date_from
         self.date_to = date_to
+        self.has_image = has_image
+        self.is_verified = is_verified
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary, excluding None values."""
+        return {
+            k: v for k, v in {
+                "status": self.status,
+                "priority": self.priority,
+                "category_id": self.category_id,
+                "department_id": self.department_id,
+                "date_from": self.date_from,
+                "date_to": self.date_to,
+                "has_image": self.has_image,
+                "is_verified": self.is_verified
+            }.items() if v is not None
+        }
 
 
 # ==================== ROLE-BASED ACCESS ====================
@@ -471,7 +506,190 @@ def rate_limit(max_requests: int, window_seconds: int, key_prefix: str = "api"):
     return RateLimitChecker(max_requests, window_seconds, key_prefix)
 
 
-# ==================== VALIDATION ====================
+# ==================== COMPLAINT VALIDATION & VISIBILITY ====================
+
+async def get_complaint_with_ownership(
+    complaint_id: UUID,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get complaint and validate ownership.
+    
+    Args:
+        complaint_id: Complaint UUID
+        roll_no: Student roll number
+        db: Database session
+    
+    Returns:
+        Complaint object
+    
+    Raises:
+        HTTPException: If complaint not found or not owned by student
+    
+    Usage:
+        @router.put("/complaints/{complaint_id}")
+        async def update_complaint(
+            complaint = Depends(get_complaint_with_ownership)
+        ):
+            # complaint is already validated
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+    
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    
+    if complaint.student_roll_no != roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this complaint"
+        )
+    
+    return complaint
+
+
+async def get_complaint_with_visibility(
+    complaint_id: UUID,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get complaint and check visibility permissions.
+    
+    Args:
+        complaint_id: Complaint UUID
+        roll_no: Student roll number
+        db: Database session
+    
+    Returns:
+        Complaint object
+    
+    Raises:
+        HTTPException: If complaint not found or not visible to user
+    
+    Usage:
+        @router.get("/complaints/{complaint_id}")
+        async def get_complaint(
+            complaint = Depends(get_complaint_with_visibility)
+        ):
+            return complaint
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    from src.repositories.student_repo import StudentRepository
+    
+    complaint_repo = ComplaintRepository(db)
+    student_repo = StudentRepository(db)
+    
+    complaint = await complaint_repo.get_with_relations(complaint_id)
+    
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    
+    # Get student info for visibility check
+    student = await student_repo.get_with_department(roll_no)
+    
+    # Check visibility permissions
+    can_view = await check_complaint_visibility(complaint, student)
+    
+    if not can_view:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to view this complaint"
+        )
+    
+    return complaint
+
+
+async def check_complaint_visibility(complaint, student) -> bool:
+    """
+    ✅ NEW: Check if student can view complaint based on visibility rules.
+    
+    Args:
+        complaint: Complaint object
+        student: Student object
+    
+    Returns:
+        True if student can view complaint
+    """
+    # Owner can always view their own complaints
+    if complaint.student_roll_no == student.roll_no:
+        return True
+    
+    # Check visibility type
+    visibility = complaint.visibility
+    
+    if visibility == "Public":
+        return True
+    
+    elif visibility == "Department":
+        # Only students from same department can view
+        return complaint.student.department_id == student.department_id
+    
+    elif visibility == "Private":
+        # Only owner can view
+        return False
+    
+    # Default: allow access for public
+    return True
+
+
+async def get_authority_complaint(
+    complaint_id: UUID,
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get complaint assigned to current authority.
+    
+    Args:
+        complaint_id: Complaint UUID
+        authority_id: Authority ID
+        db: Database session
+    
+    Returns:
+        Complaint object
+    
+    Raises:
+        HTTPException: If complaint not found or not assigned to authority
+    
+    Usage:
+        @router.put("/complaints/{complaint_id}/status")
+        async def update_status(
+            complaint = Depends(get_authority_complaint)
+        ):
+            # complaint is already validated
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get_with_relations(complaint_id)
+    
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    
+    # Check if assigned to this authority
+    if complaint.assigned_authority_id != authority_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This complaint is not assigned to you"
+        )
+    
+    return complaint
+
+
+# ==================== LEGACY VALIDATION (KEPT FOR BACKWARD COMPATIBILITY) ====================
 
 async def validate_complaint_ownership(
     complaint_id: str,
@@ -479,6 +697,8 @@ async def validate_complaint_ownership(
     db: AsyncSession = Depends(get_db)
 ):
     """
+    ⚠️ LEGACY: Use get_complaint_with_ownership() instead.
+    
     Dependency to validate complaint ownership.
     
     Args:
@@ -488,16 +708,7 @@ async def validate_complaint_ownership(
     
     Raises:
         HTTPException: If complaint not found or not owned by student
-    
-    Usage:
-        @router.put("/complaints/{complaint_id}")
-        async def update_complaint(
-            complaint_id: str,
-            _: None = Depends(validate_complaint_ownership)
-        ):
-            pass
     """
-    from uuid import UUID
     from src.repositories.complaint_repo import ComplaintRepository
     
     complaint_repo = ComplaintRepository(db)
@@ -534,6 +745,18 @@ async def get_complaint_repo(db: AsyncSession = Depends(get_db)):
     return ComplaintRepository(db)
 
 
+async def get_vote_repo(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get vote repository instance."""
+    from src.repositories.vote_repo import VoteRepository
+    return VoteRepository(db)
+
+
+async def get_notification_repo(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get notification repository instance."""
+    from src.repositories.notification_repo import NotificationRepository
+    return NotificationRepository(db)
+
+
 # ==================== SERVICE DEPENDENCIES ====================
 
 async def get_complaint_service(db: AsyncSession = Depends(get_db)):
@@ -547,6 +770,32 @@ async def get_vote_service(db: AsyncSession = Depends(get_db)):
     from src.services.vote_service import VoteService
     return VoteService(db)
 
+
+async def get_notification_service(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get notification service instance."""
+    from src.services.notification_service import notification_service
+    return notification_service
+
+
+async def get_image_verification_service(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get image verification service instance."""
+    from src.services.image_verification import image_verification_service
+    return image_verification_service
+
+
+async def get_authority_service(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get authority service instance."""
+    from src.services.authority_service import authority_service
+    return authority_service
+
+
+async def get_authority_update_service(db: AsyncSession = Depends(get_db)):
+    """✅ NEW: Get authority update service instance."""
+    from src.services.authority_update_service import AuthorityUpdateService
+    return AuthorityUpdateService(db)
+
+
+# ==================== EXPORTS ====================
 
 __all__ = [
     # Database
@@ -576,15 +825,27 @@ __all__ = [
     "rate_limit",
     "RateLimitChecker",
     
-    # Validation
+    # Complaint Validation & Visibility (NEW)
+    "get_complaint_with_ownership",
+    "get_complaint_with_visibility",
+    "get_authority_complaint",
+    "check_complaint_visibility",
+    
+    # Legacy Validation
     "validate_complaint_ownership",
     
     # Repositories
     "get_student_repo",
     "get_authority_repo",
     "get_complaint_repo",
+    "get_vote_repo",
+    "get_notification_repo",
     
     # Services
     "get_complaint_service",
     "get_vote_service",
+    "get_notification_service",
+    "get_image_verification_service",
+    "get_authority_service",
+    "get_authority_update_service",
 ]

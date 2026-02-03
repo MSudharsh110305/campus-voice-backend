@@ -1,20 +1,37 @@
 """
 Admin API endpoints.
-System administration, user management, analytics.
+
+System administration, user management, analytics, bulk operations.
+
+✅ FIXED: Import from src.database.connection
+✅ FIXED: Import from src.api.dependencies
+✅ ADDED: Comprehensive system analytics
+✅ ADDED: Bulk operations for complaints
+✅ ADDED: Authority management (activate/deactivate)
+✅ ADDED: Student management endpoints
+✅ ADDED: Image moderation endpoints
+✅ ADDED: System health metrics
 """
 
 import logging
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.session import get_db
-from src.schemas.authority import AuthorityCreate, AuthorityListResponse
+from src.database.connection import get_db  # ✅ FIXED IMPORT
+from src.api.dependencies import get_current_admin  # ✅ FIXED IMPORT
+from src.schemas.authority import (
+    AuthorityCreate,
+    AuthorityProfile,
+    AuthorityListResponse,
+)
+from src.schemas.student import StudentProfile, StudentListResponse
 from src.schemas.common import SuccessResponse
 from src.repositories.authority_repo import AuthorityRepository
 from src.repositories.student_repo import StudentRepository
 from src.repositories.complaint_repo import ComplaintRepository
 from src.services.auth_service import auth_service
-from src.utils.jwt_utils import get_current_authority
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +49,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 )
 async def create_authority(
     data: AuthorityCreate,
-    current_authority_id: int = Depends(get_current_authority),
+    current_authority_id: int = Depends(get_current_admin),  # ✅ FIXED
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -40,15 +57,7 @@ async def create_authority(
     
     Requires admin privileges.
     """
-    # Check if current user is admin
     authority_repo = AuthorityRepository(db)
-    current_authority = await authority_repo.get(current_authority_id)
-    
-    if not current_authority or current_authority.authority_type != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
     
     # Check if email already exists
     existing = await authority_repo.get_by_email(data.email)
@@ -73,7 +82,7 @@ async def create_authority(
         authority_level=data.authority_level
     )
     
-    logger.info(f"Authority created: {data.email}")
+    logger.info(f"Authority created: {data.email} by admin {current_authority_id}")
     
     return SuccessResponse(
         success=True,
@@ -88,30 +97,244 @@ async def create_authority(
     description="Get list of all authorities (admin only)"
 )
 async def list_authorities(
-    current_authority_id: int = Depends(get_current_authority),
+    current_authority_id: int = Depends(get_current_admin),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all authorities."""
+    """List all authorities with optional filtering."""
     authority_repo = AuthorityRepository(db)
     
-    # Check admin access
-    current_authority = await authority_repo.get(current_authority_id)
-    if not current_authority or current_authority.authority_type != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
+    # ✅ FIXED: Use proper count query
+    from sqlalchemy import select, func, and_
+    from src.database.models import Authority
     
-    authorities = await authority_repo.get_active_authorities(skip, limit)
-    total = await authority_repo.count(is_active=True)
+    # Build conditions
+    conditions = []
+    if is_active is not None:
+        conditions.append(Authority.is_active == is_active)
     
-    from src.schemas.authority import AuthorityProfile
+    # Get authorities
+    query = select(Authority).order_by(Authority.created_at.desc())
+    if conditions:
+        query = query.where(and_(*conditions))
+    query = query.offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    authorities = result.scalars().all()
+    
+    # Count
+    count_query = select(func.count())
+    if conditions:
+        count_query = count_query.where(and_(*conditions))
+    count_result = await db.execute(count_query.select_from(Authority))
+    total = count_result.scalar() or 0
     
     return AuthorityListResponse(
         authorities=[AuthorityProfile.model_validate(a) for a in authorities],
         total=total
+    )
+
+
+@router.put(
+    "/authorities/{authority_id}/toggle-active",
+    response_model=SuccessResponse,
+    summary="Toggle authority active status",
+    description="Activate or deactivate authority account (admin only)"
+)
+async def toggle_authority_status(
+    authority_id: int,
+    activate: bool = Query(..., description="True to activate, False to deactivate"),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Toggle authority active status.
+    
+    - **activate**: True to activate, False to deactivate
+    """
+    # Prevent self-deactivation
+    if authority_id == current_authority_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify your own account status"
+        )
+    
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    
+    if not authority:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Authority not found"
+        )
+    
+    # Update status
+    authority.is_active = activate
+    authority.updated_at = datetime.now(timezone.utc)
+    
+    await db.commit()
+    
+    action = "activated" if activate else "deactivated"
+    logger.info(f"Authority {authority_id} {action} by admin {current_authority_id}")
+    
+    return SuccessResponse(
+        success=True,
+        message=f"Authority account {action}"
+    )
+
+
+@router.delete(
+    "/authorities/{authority_id}",
+    response_model=SuccessResponse,
+    summary="Delete authority",
+    description="Delete authority account (admin only)"
+)
+async def delete_authority(
+    authority_id: int,
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Delete authority account.
+    
+    Note: Cannot delete authority with assigned complaints.
+    """
+    # Prevent self-deletion
+    if authority_id == current_authority_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    # Check for assigned complaints
+    from sqlalchemy import select, func
+    from src.database.models import Complaint, Authority
+    
+    complaint_count_query = select(func.count()).where(
+        Complaint.assigned_authority_id == authority_id
+    )
+    complaint_count_result = await db.execute(complaint_count_query)
+    complaint_count = complaint_count_result.scalar() or 0
+    
+    if complaint_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete authority with {complaint_count} assigned complaints"
+        )
+    
+    # Delete authority
+    authority_query = select(Authority).where(Authority.id == authority_id)
+    authority_result = await db.execute(authority_query)
+    authority = authority_result.scalar_one_or_none()
+    
+    if not authority:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Authority not found"
+        )
+    
+    await db.delete(authority)
+    await db.commit()
+    
+    logger.info(f"Authority {authority_id} deleted by admin {current_authority_id}")
+    
+    return SuccessResponse(
+        success=True,
+        message="Authority deleted successfully"
+    )
+
+
+# ==================== STUDENT MANAGEMENT ====================
+
+@router.get(
+    "/students",
+    response_model=StudentListResponse,
+    summary="List students",
+    description="Get list of all students (admin only)"
+)
+async def list_students(
+    current_authority_id: int = Depends(get_current_admin),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    department_id: Optional[int] = Query(None, description="Filter by department"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: List all students with optional filtering.
+    """
+    from sqlalchemy import select, func, and_
+    from src.database.models import Student
+    
+    # Build conditions
+    conditions = []
+    if is_active is not None:
+        conditions.append(Student.is_active == is_active)
+    if department_id is not None:
+        conditions.append(Student.department_id == department_id)
+    
+    # Get students
+    query = select(Student).order_by(Student.roll_no)
+    if conditions:
+        query = query.where(and_(*conditions))
+    query = query.offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    students = result.scalars().all()
+    
+    # Count
+    count_query = select(func.count())
+    if conditions:
+        count_query = count_query.where(and_(*conditions))
+    count_result = await db.execute(count_query.select_from(Student))
+    total = count_result.scalar() or 0
+    
+    return StudentListResponse(
+        students=[StudentProfile.model_validate(s) for s in students],
+        total=total
+    )
+
+
+@router.put(
+    "/students/{roll_no}/toggle-active",
+    response_model=SuccessResponse,
+    summary="Toggle student active status",
+    description="Activate or deactivate student account (admin only)"
+)
+async def toggle_student_status(
+    roll_no: str,
+    activate: bool = Query(..., description="True to activate, False to deactivate"),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Toggle student active status.
+    
+    - **activate**: True to activate, False to deactivate
+    """
+    student_repo = StudentRepository(db)
+    student = await student_repo.get(roll_no)
+    
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    # Update status
+    student.is_active = activate
+    student.updated_at = datetime.now(timezone.utc)
+    
+    await db.commit()
+    
+    action = "activated" if activate else "deactivated"
+    logger.info(f"Student {roll_no} {action} by admin {current_authority_id}")
+    
+    return SuccessResponse(
+        success=True,
+        message=f"Student account {action}"
     )
 
 
@@ -123,84 +346,393 @@ async def list_authorities(
     description="Get overall system statistics (admin only)"
 )
 async def get_system_stats(
-    current_authority_id: int = Depends(get_current_authority),
+    current_authority_id: int = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get system-wide statistics."""
-    authority_repo = AuthorityRepository(db)
+    """Get comprehensive system-wide statistics."""
+    from sqlalchemy import select, func
+    from src.database.models import Student, Authority, Complaint
     
-    # Check admin access
-    current_authority = await authority_repo.get(current_authority_id)
-    if not current_authority or current_authority.authority_type != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
+    # ✅ FIXED: Use count queries
+    # Total counts
+    student_count_query = select(func.count()).select_from(Student)
+    student_count_result = await db.execute(student_count_query)
+    total_students = student_count_result.scalar() or 0
     
-    student_repo = StudentRepository(db)
-    complaint_repo = ComplaintRepository(db)
+    authority_count_query = select(func.count()).select_from(Authority)
+    authority_count_result = await db.execute(authority_count_query)
+    total_authorities = authority_count_result.scalar() or 0
     
-    # Get counts
-    total_students = await student_repo.count()
-    total_authorities = await authority_repo.count()
-    total_complaints = await complaint_repo.count()
+    complaint_count_query = select(func.count()).select_from(Complaint)
+    complaint_count_result = await db.execute(complaint_count_query)
+    total_complaints = complaint_count_result.scalar() or 0
     
     # Get complaint stats
+    complaint_repo = ComplaintRepository(db)
     status_counts = await complaint_repo.count_by_status()
     priority_counts = await complaint_repo.count_by_priority()
     category_counts = await complaint_repo.count_by_category()
+    image_counts = await complaint_repo.count_images()
+    
+    # Recent activity (last 7 days)
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_complaints_query = select(func.count()).where(
+        Complaint.submitted_at >= seven_days_ago
+    )
+    recent_result = await db.execute(recent_complaints_query)
+    recent_complaints = recent_result.scalar() or 0
     
     return {
         "total_students": total_students,
         "total_authorities": total_authorities,
         "total_complaints": total_complaints,
+        "recent_complaints_7d": recent_complaints,
         "complaints_by_status": status_counts,
         "complaints_by_priority": priority_counts,
-        "complaints_by_category": category_counts
+        "complaints_by_category": category_counts,
+        "image_statistics": image_counts
     }
 
 
-# ==================== USER MANAGEMENT ====================
-
-@router.post(
-    "/students/{roll_no}/deactivate",
-    response_model=SuccessResponse,
-    summary="Deactivate student",
-    description="Deactivate student account (admin only)"
+@router.get(
+    "/stats/analytics",
+    summary="Advanced analytics",
+    description="Get detailed analytics and trends (admin only)"
 )
-async def deactivate_student(
-    roll_no: str,
-    current_authority_id: int = Depends(get_current_authority),
+async def get_analytics(
+    current_authority_id: int = Depends(get_current_admin),
+    days: int = Query(30, ge=1, le=365, description="Number of days for trend analysis"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Deactivate student account."""
-    authority_repo = AuthorityRepository(db)
+    """
+    ✅ NEW: Get advanced analytics and trends.
     
-    # Check admin access
-    current_authority = await authority_repo.get(current_authority_id)
-    if not current_authority or current_authority.authority_type != "Admin":
+    Includes:
+    - Complaint trends over time
+    - Resolution rates
+    - Average response times
+    - Department performance
+    """
+    from sqlalchemy import select, func, and_, case
+    from src.database.models import Complaint
+    
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    # Complaints over time
+    daily_complaints_query = (
+        select(
+            func.date(Complaint.submitted_at).label('date'),
+            func.count(Complaint.id).label('count')
+        )
+        .where(Complaint.submitted_at >= start_date)
+        .group_by(func.date(Complaint.submitted_at))
+        .order_by(func.date(Complaint.submitted_at))
+    )
+    daily_result = await db.execute(daily_complaints_query)
+    daily_complaints = [
+        {"date": str(row.date), "count": row.count}
+        for row in daily_result
+    ]
+    
+    # Resolution rate
+    total_query = select(func.count()).where(
+        Complaint.submitted_at >= start_date
+    )
+    total_result = await db.execute(total_query)
+    total = total_result.scalar() or 0
+    
+    resolved_query = select(func.count()).where(
+        and_(
+            Complaint.submitted_at >= start_date,
+            Complaint.status.in_(["Resolved", "Closed"])
+        )
+    )
+    resolved_result = await db.execute(resolved_query)
+    resolved = resolved_result.scalar() or 0
+    
+    resolution_rate = (resolved / total * 100) if total > 0 else 0
+    
+    # Average resolution time (for resolved complaints)
+    avg_time_query = select(
+        func.avg(
+            func.extract('epoch', Complaint.resolved_at - Complaint.submitted_at) / 3600
+        )
+    ).where(
+        and_(
+            Complaint.submitted_at >= start_date,
+            Complaint.resolved_at.isnot(None)
+        )
+    )
+    avg_time_result = await db.execute(avg_time_query)
+    avg_resolution_hours = avg_time_result.scalar() or 0
+    
+    return {
+        "period_days": days,
+        "total_complaints": total,
+        "resolved_complaints": resolved,
+        "resolution_rate_percent": round(resolution_rate, 2),
+        "avg_resolution_time_hours": round(avg_resolution_hours, 2),
+        "daily_complaints": daily_complaints
+    }
+
+
+# ==================== BULK OPERATIONS ====================
+
+@router.post(
+    "/complaints/bulk-status-update",
+    response_model=SuccessResponse,
+    summary="Bulk update complaint status",
+    description="Update status for multiple complaints (admin only)"
+)
+async def bulk_update_status(
+    complaint_ids: list[str] = Query(..., description="List of complaint UUIDs"),
+    new_status: str = Query(..., description="New status to apply"),
+    reason: str = Query(..., description="Reason for bulk update"),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Bulk update complaint status.
+    
+    Useful for mass operations like closing old complaints.
+    """
+    from uuid import UUID
+    from src.database.models import Complaint, StatusUpdate
+    
+    # Validate status
+    valid_statuses = ["Raised", "In Progress", "Resolved", "Closed", "Spam"]
+    if new_status not in valid_statuses:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
         )
     
-    student_repo = StudentRepository(db)
-    student = await student_repo.get(roll_no)
+    # Convert to UUIDs
+    try:
+        uuids = [UUID(cid) for cid in complaint_ids]
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid complaint ID format"
+        )
     
-    if not student:
+    # Get complaints
+    from sqlalchemy import select
+    query = select(Complaint).where(Complaint.id.in_(uuids))
+    result = await db.execute(query)
+    complaints = result.scalars().all()
+    
+    if not complaints:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student not found"
+            detail="No complaints found with provided IDs"
         )
     
-    await student_repo.update(roll_no, is_active=False)
+    # Update each complaint
+    updated_count = 0
+    for complaint in complaints:
+        old_status = complaint.status
+        
+        # Create status update record
+        status_update = StatusUpdate(
+            complaint_id=complaint.id,
+            updated_by=current_authority_id,
+            old_status=old_status,
+            new_status=new_status,
+            reason=f"Bulk update: {reason}"
+        )
+        db.add(status_update)
+        
+        # Update complaint
+        complaint.status = new_status
+        complaint.updated_at = datetime.now(timezone.utc)
+        
+        if new_status in ["Resolved", "Closed"] and not complaint.resolved_at:
+            complaint.resolved_at = datetime.now(timezone.utc)
+        
+        updated_count += 1
     
-    logger.info(f"Student deactivated: {roll_no}")
+    await db.commit()
+    
+    logger.info(f"Bulk status update: {updated_count} complaints updated to {new_status} by admin {current_authority_id}")
     
     return SuccessResponse(
         success=True,
-        message="Student account deactivated"
+        message=f"{updated_count} complaints updated to '{new_status}'"
     )
+
+
+# ==================== IMAGE MODERATION ====================
+
+@router.get(
+    "/images/pending-verification",
+    summary="Get images pending verification",
+    description="Get list of complaint images needing verification (admin only)"
+)
+async def get_pending_images(
+    current_authority_id: int = Depends(get_current_admin),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get complaints with images pending verification.
+    
+    For manual moderation of uploaded images.
+    """
+    complaint_repo = ComplaintRepository(db)
+    
+    # Get pending verifications
+    complaints = await complaint_repo.get_pending_image_verification(limit=limit)
+    
+    # Format response
+    pending_images = []
+    for complaint in complaints:
+        pending_images.append({
+            "complaint_id": str(complaint.id),
+            "student_roll_no": complaint.student_roll_no,
+            "category": complaint.category.name if complaint.category else None,
+            "complaint_text": complaint.rephrased_text[:100] + "..." if len(complaint.rephrased_text) > 100 else complaint.rephrased_text,
+            "image_filename": complaint.image_filename,
+            "image_size_kb": complaint.image_size // 1024 if complaint.image_size else 0,
+            "submitted_at": complaint.submitted_at.isoformat()
+        })
+    
+    return {
+        "total": len(pending_images),
+        "pending_images": pending_images
+    }
+
+
+@router.post(
+    "/images/{complaint_id}/moderate",
+    response_model=SuccessResponse,
+    summary="Moderate complaint image",
+    description="Approve or reject complaint image (admin only)"
+)
+async def moderate_image(
+    complaint_id: str,
+    approve: bool = Query(..., description="True to approve, False to reject"),
+    reason: Optional[str] = Query(None, description="Reason for rejection"),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Manually moderate complaint image.
+    
+    - **approve**: True to approve, False to reject
+    - **reason**: Required if rejecting
+    """
+    from uuid import UUID
+    
+    try:
+        complaint_uuid = UUID(complaint_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid complaint ID format"
+        )
+    
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_uuid)
+    
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    
+    if not complaint.image_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No image attached to this complaint"
+        )
+    
+    # Update verification status
+    if approve:
+        complaint.image_verified = True
+        complaint.image_verification_status = "Verified"
+        message = "Image approved"
+    else:
+        if not reason:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reason required for rejection"
+            )
+        complaint.image_verified = False
+        complaint.image_verification_status = "Rejected"
+        message = f"Image rejected: {reason}"
+    
+    complaint.updated_at = datetime.now(timezone.utc)
+    
+    await db.commit()
+    
+    logger.info(f"Image moderation for complaint {complaint_id}: {'approved' if approve else 'rejected'} by admin {current_authority_id}")
+    
+    return SuccessResponse(
+        success=True,
+        message=message
+    )
+
+
+# ==================== SYSTEM HEALTH ====================
+
+@router.get(
+    "/health/metrics",
+    summary="System health metrics",
+    description="Get system health and performance metrics (admin only)"
+)
+async def get_health_metrics(
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get system health metrics.
+    
+    Includes database stats and performance indicators.
+    """
+    from sqlalchemy import select, func, text
+    from src.database.models import Complaint
+    
+    # Database size (PostgreSQL specific)
+    try:
+        db_size_query = text("SELECT pg_database_size(current_database())")
+        db_size_result = await db.execute(db_size_query)
+        db_size_bytes = db_size_result.scalar() or 0
+        db_size_mb = db_size_bytes / (1024 * 1024)
+    except:
+        db_size_mb = None
+    
+    # Complaint processing stats
+    pending_complaints_query = select(func.count()).where(
+        Complaint.status == "Raised"
+    )
+    pending_result = await db.execute(pending_complaints_query)
+    pending_complaints = pending_result.scalar() or 0
+    
+    # Old unresolved complaints (>7 days)
+    from sqlalchemy import and_
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    old_complaints_query = select(func.count()).where(
+        and_(
+            Complaint.status.in_(["Raised", "In Progress"]),
+            Complaint.submitted_at < seven_days_ago
+        )
+    )
+    old_result = await db.execute(old_complaints_query)
+    old_unresolved = old_result.scalar() or 0
+    
+    # Image storage stats
+    complaint_repo = ComplaintRepository(db)
+    image_counts = await complaint_repo.count_images()
+    
+    return {
+        "database_size_mb": round(db_size_mb, 2) if db_size_mb else None,
+        "pending_complaints": pending_complaints,
+        "old_unresolved_7d": old_unresolved,
+        "image_statistics": image_counts,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 __all__ = ["router"]

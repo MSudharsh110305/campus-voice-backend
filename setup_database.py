@@ -1,15 +1,24 @@
 """
 Complete database setup script.
+
 Creates tables, seeds initial data, and creates admin user.
+
+✅ FIXED: Use actual table name from database (complaint_categories)
 """
 
 import asyncio
 from sqlalchemy import text
+
 from src.database.connection import AsyncSessionLocal, engine
-from src.database.models import Base, Department, ComplaintCategory, Authority
+from src.database.models import (
+    Base, Department, ComplaintCategory, Authority,
+    Student, Complaint, Vote, StatusUpdate, AuthorityUpdate, Notification
+)
 from src.services.auth_service import auth_service
 from src.config.settings import settings
-from src.utils.logger import app_logger
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 async def test_connection():
@@ -55,7 +64,6 @@ async def create_tables():
             """))
             tables = [row[0] for row in result.fetchall()]
             print(f"   Created tables: {', '.join(tables)}")
-            
     except Exception as e:
         print(f"❌ Error creating tables: {e}")
         raise
@@ -66,7 +74,6 @@ async def seed_departments():
     print("\n🌱 Seeding departments...")
     async with AsyncSessionLocal() as session:
         try:
-            # Check if departments already exist
             result = await session.execute(text("SELECT COUNT(*) FROM departments"))
             count = result.scalar()
             
@@ -75,26 +82,11 @@ async def seed_departments():
                 return
             
             departments = [
-                Department(
-                    name="Computer Science & Engineering",
-                    code="CSE"
-                ),
-                Department(
-                    name="Electronics & Communication Engineering",
-                    code="ECE"
-                ),
-                Department(
-                    name="Mechanical Engineering",
-                    code="MECH"
-                ),
-                Department(
-                    name="Civil Engineering",
-                    code="CIVIL"
-                ),
-                Department(
-                    name="Information Technology",
-                    code="IT"
-                ),
+                Department(name="Computer Science & Engineering", code="CSE"),
+                Department(name="Electronics & Communication Engineering", code="ECE"),
+                Department(name="Mechanical Engineering", code="MECH"),
+                Department(name="Civil Engineering", code="CIVIL"),
+                Department(name="Information Technology", code="IT"),
             ]
             
             for dept in departments:
@@ -103,11 +95,10 @@ async def seed_departments():
             await session.commit()
             print(f"✅ Seeded {len(departments)} departments")
             
-            # Verify
             for dept in departments:
                 await session.refresh(dept)
                 print(f"   - {dept.name} (ID: {dept.id}, Code: {dept.code})")
-                
+        
         except Exception as e:
             await session.rollback()
             print(f"❌ Error seeding departments: {e}")
@@ -119,7 +110,7 @@ async def seed_categories():
     print("\n🌱 Seeding complaint categories...")
     async with AsyncSessionLocal() as session:
         try:
-            # Check if categories already exist
+            # ✅ FIXED: Use actual table name from database
             result = await session.execute(text("SELECT COUNT(*) FROM complaint_categories"))
             count = result.scalar()
             
@@ -156,11 +147,10 @@ async def seed_categories():
             await session.commit()
             print(f"✅ Seeded {len(categories)} categories")
             
-            # Verify
             for category in categories:
                 await session.refresh(category)
                 print(f"   - {category.name} (ID: {category.id})")
-                
+        
         except Exception as e:
             await session.rollback()
             print(f"❌ Error seeding categories: {e}")
@@ -170,16 +160,14 @@ async def seed_categories():
 async def create_admin_user():
     """Create initial admin user."""
     print("\n👤 Creating admin user...")
-    
     async with AsyncSessionLocal() as session:
         try:
-            # Check if admin exists
             result = await session.execute(
                 text("SELECT id FROM authorities WHERE email = :email"),
                 {"email": settings.ADMIN_EMAIL}
             )
-            
             existing = result.first()
+            
             if existing:
                 print(f"⚠️  Admin user already exists (ID: {existing[0]})")
                 return
@@ -193,7 +181,7 @@ async def create_admin_user():
                 authority_level=100,
                 designation="System Administrator",
                 is_active=True,
-                department_id=None  # Admin is not tied to any department
+                department_id=None
             )
             
             session.add(admin)
@@ -205,7 +193,7 @@ async def create_admin_user():
             print(f"   Name: {admin.name}")
             print(f"   Email: {admin.email}")
             print(f"   Authority Level: {admin.authority_level}")
-            
+        
         except Exception as e:
             await session.rollback()
             print(f"❌ Error creating admin: {e}")
@@ -215,10 +203,8 @@ async def create_admin_user():
 async def create_sample_authorities():
     """Create sample authorities for testing."""
     print("\n👥 Creating sample authorities...")
-    
     async with AsyncSessionLocal() as session:
         try:
-            # Check if sample authorities exist
             result = await session.execute(
                 text("SELECT COUNT(*) FROM authorities WHERE authority_type != 'Admin'")
             )
@@ -238,7 +224,7 @@ async def create_sample_authorities():
                     authority_level=5,
                     designation="Chief Warden",
                     is_active=True,
-                    department_id=None  # Warden handles all hostels
+                    department_id=None
                 ),
                 Authority(
                     name="Prof. Sita Devi",
@@ -249,7 +235,7 @@ async def create_sample_authorities():
                     authority_level=10,
                     designation="Head of Department - CSE",
                     is_active=True,
-                    department_id=1  # CSE department
+                    department_id=1
                 ),
                 Authority(
                     name="Mr. Arun Sharma",
@@ -260,7 +246,7 @@ async def create_sample_authorities():
                     authority_level=7,
                     designation="Senior Administrative Officer",
                     is_active=True,
-                    department_id=None  # General administration
+                    department_id=None
                 ),
             ]
             
@@ -270,12 +256,11 @@ async def create_sample_authorities():
             await session.commit()
             print(f"✅ Created {len(authorities)} sample authorities")
             
-            # Verify
             for authority in authorities:
                 await session.refresh(authority)
                 print(f"   - {authority.name} ({authority.authority_type})")
                 print(f"     Email: {authority.email}")
-                
+        
         except Exception as e:
             await session.rollback()
             print(f"❌ Error creating sample authorities: {e}")
@@ -285,44 +270,40 @@ async def create_sample_authorities():
 async def verify_schema():
     """Verify database schema includes all required columns."""
     print("\n🔍 Verifying database schema...")
-    
     async with AsyncSessionLocal() as session:
         try:
-            # Check students table has 'year' column
             result = await session.execute(text("""
                 SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns 
-                WHERE table_name = 'students' 
+                FROM information_schema.columns
+                WHERE table_name = 'students'
                 AND column_name IN ('year', 'roll_no', 'email', 'gender', 'stay_type')
                 ORDER BY ordinal_position
             """))
-            
             student_columns = result.fetchall()
+            
             print("   Students table key columns:")
             for col in student_columns:
-                print(f"      - {col[0]}: {col[1]} (nullable: {col[2]}, default: {col[3]})")
+                print(f"   - {col[0]}: {col[1]} (nullable: {col[2]}, default: {col[3]})")
             
-            # Check if year column exists
             year_exists = any(col[0] == 'year' for col in student_columns)
             if year_exists:
                 print("   ✅ Students.year column exists")
             else:
                 print("   ❌ Students.year column MISSING!")
-                
-            # Check authorities table for announcement support
+            
             result = await session.execute(text("""
                 SELECT table_name
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
                 AND table_name = 'authority_updates'
             """))
+            updates_table = result.fetchone()
             
-            announcements_table = result.fetchone()
-            if announcements_table:
+            if updates_table:
                 print("   ✅ authority_updates table exists")
             else:
-                print("   ⚠️  authority_updates table not found (may need migration)")
-                
+                print("   ⚠️  authority_updates table not found")
+        
         except Exception as e:
             print(f"⚠️  Schema verification warning: {e}")
 
@@ -335,10 +316,10 @@ async def print_summary():
     
     async with AsyncSessionLocal() as session:
         try:
-            # Count records
+            # ✅ FIXED: Use actual table names
             tables = {
                 "departments": "Departments",
-                "complaint_categories": "Complaint Categories",
+                "complaint_categories": "Complaint Categories",  # ✅ Actual table name
                 "authorities": "Authorities",
                 "students": "Students",
                 "complaints": "Complaints"
@@ -348,7 +329,7 @@ async def print_summary():
                 result = await session.execute(text(f"SELECT COUNT(*) FROM {table}"))
                 count = result.scalar()
                 print(f"   {label}: {count} records")
-                
+        
         except Exception as e:
             print(f"⚠️  Could not generate summary: {e}")
 
@@ -361,33 +342,23 @@ async def main():
     print()
     
     try:
-        # Step 1: Test connection
         connected = await test_connection()
         if not connected:
             print("\n❌ Cannot proceed without database connection")
             return
-        
         print()
         
-        # Step 2: Drop existing tables (optional - comment out in production)
         response = input("⚠️  Drop existing tables? (yes/no): ")
         if response.lower() == "yes":
             await drop_all_tables()
             print()
         
-        # Step 3: Create tables
         await create_tables()
-        
-        # Step 4: Seed data
         await seed_departments()
         await seed_categories()
         await create_admin_user()
         await create_sample_authorities()
-        
-        # Step 5: Verify schema
         await verify_schema()
-        
-        # Step 6: Print summary
         await print_summary()
         
         print()
@@ -398,20 +369,20 @@ async def main():
         print("📋 Login Credentials:")
         print()
         print("   ADMIN:")
-        print(f"      Email: {settings.ADMIN_EMAIL}")
-        print(f"      Password: {settings.ADMIN_PASSWORD}")
+        print(f"   Email: {settings.ADMIN_EMAIL}")
+        print(f"   Password: {settings.ADMIN_PASSWORD}")
         print()
         print("   SAMPLE WARDEN:")
-        print(f"      Email: warden@college.edu")
-        print(f"      Password: Warden@123")
+        print(f"   Email: warden@college.edu")
+        print(f"   Password: Warden@123")
         print()
         print("   SAMPLE HOD (CSE):")
-        print(f"      Email: hod.cse@college.edu")
-        print(f"      Password: HOD@123")
+        print(f"   Email: hod.cse@college.edu")
+        print(f"   Password: HOD@123")
         print()
         print("⚠️  IMPORTANT: Change all default passwords after first login!")
         print("=" * 80)
-        
+    
     except Exception as e:
         print()
         print("=" * 80)

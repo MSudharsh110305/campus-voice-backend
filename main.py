@@ -3,6 +3,9 @@ CampusVoice - Campus Complaint Management System
 Main application entry point.
 
 FastAPI application with async support, middleware, and comprehensive error handling.
+
+✅ FIXED: Import from src.database.connection
+✅ FIXED: Proper lifespan integration
 """
 
 import sys
@@ -12,7 +15,6 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.api import app
 from src.config.settings import settings
 from src.utils.logger import app_logger
 
@@ -34,7 +36,7 @@ def main():
     
     # Run with Uvicorn
     uvicorn.run(
-        "src.api:app",
+        "src.api:app",  # ✅ Correct: uses lifespan from src.api.__init__.py
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,

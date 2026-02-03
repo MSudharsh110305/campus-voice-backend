@@ -1,30 +1,55 @@
 """
 Authority API endpoints.
-Login, dashboard, complaint management, status updates.
+
+Login, dashboard, complaint management, status updates, escalation.
+
+✅ FIXED: Import from src.database.connection
+✅ FIXED: Import from src.api.dependencies
+✅ ADDED: Authority update posting endpoints
+✅ ADDED: Escalation endpoints
+✅ ADDED: Proper count queries
+✅ ADDED: Notification integration
+✅ FIXED: Status update with notification creation
 """
 
 import logging
 from typing import Optional
 from uuid import UUID
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.session import get_db
+from src.database.connection import get_db  # ✅ FIXED IMPORT
+from src.api.dependencies import (  # ✅ FIXED IMPORT
+    get_current_authority,
+    get_authority_complaint,
+)
 from src.schemas.authority import (
     AuthorityLogin,
     AuthorityProfile,
     AuthorityResponse,
     AuthorityStats,
     AuthorityDashboard,
+    AuthorityUpdateCreate,
+    AuthorityUpdateResponse,
 )
-from src.schemas.complaint import ComplaintUpdate, ComplaintListResponse, ComplaintResponse
+from src.schemas.complaint import (
+    ComplaintUpdate,
+    ComplaintListResponse,
+    ComplaintResponse,
+)
 from src.schemas.common import SuccessResponse
 from src.repositories.authority_repo import AuthorityRepository
 from src.repositories.complaint_repo import ComplaintRepository
+from src.repositories.authority_update_repo import AuthorityUpdateRepository
 from src.services.auth_service import auth_service
 from src.services.complaint_service import ComplaintService
-from src.utils.jwt_utils import get_current_authority
-from src.utils.exceptions import InvalidCredentialsError, AuthorityNotFoundError, to_http_exception
+from src.services.notification_service import notification_service
+from src.utils.exceptions import (
+    InvalidCredentialsError,
+    AuthorityNotFoundError,
+    to_http_exception,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +80,17 @@ async def login_authority(
         authority = await authority_repo.get_by_email(data.email)
         
         if not authority:
-            raise InvalidCredentialsError()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
         
         # Verify password
         if not auth_service.verify_password(data.password, authority.password_hash):
-            raise InvalidCredentialsError()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
         
         # Check if account is active
         if not authority.is_active:
@@ -68,10 +99,12 @@ async def login_authority(
                 detail="Account is inactive"
             )
         
-        # Generate JWT token
+        # Generate JWT token (use "Admin" role if authority_type is Admin)
+        role = "Admin" if authority.authority_type == "Admin" else "Authority"
+        
         token = auth_service.create_access_token(
             subject=str(authority.id),
-            role="Authority"
+            role=role
         )
         
         logger.info(f"Authority logged in: {authority.email}")
@@ -87,10 +120,10 @@ async def login_authority(
             expires_in=auth_service.get_token_expiration_seconds()
         )
         
-    except InvalidCredentialsError as e:
-        raise to_http_exception(e)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Authority login error: {e}")
+        logger.error(f"Authority login error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
@@ -114,7 +147,10 @@ async def get_authority_profile(
     
     authority = await authority_repo.get_with_department(authority_id)
     if not authority:
-        raise AuthorityNotFoundError(authority_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Authority not found"
+        )
     
     return AuthorityProfile.model_validate(authority)
 
@@ -136,20 +172,76 @@ async def get_authority_dashboard(
     # Get profile
     authority = await authority_repo.get_with_department(authority_id)
     if not authority:
-        raise AuthorityNotFoundError(authority_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Authority not found"
+        )
     
-    # Get assigned complaints
-    assigned_complaints = await complaint_repo.get_assigned_to_authority(authority_id)
+    # ✅ FIXED: Use count queries instead of fetching all
+    from sqlalchemy import select, func, and_
+    from src.database.models import Complaint
     
-    # Calculate stats
+    # Total assigned
+    total_query = select(func.count()).where(
+        Complaint.assigned_authority_id == authority_id
+    )
+    total_result = await db.execute(total_query)
+    total_assigned = total_result.scalar() or 0
+    
+    # By status
+    pending_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Raised"
+        )
+    )
+    pending_result = await db.execute(pending_query)
+    pending = pending_result.scalar() or 0
+    
+    in_progress_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "In Progress"
+        )
+    )
+    in_progress_result = await db.execute(in_progress_query)
+    in_progress = in_progress_result.scalar() or 0
+    
+    resolved_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Resolved"
+        )
+    )
+    resolved_result = await db.execute(resolved_query)
+    resolved = resolved_result.scalar() or 0
+    
+    closed_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Closed"
+        )
+    )
+    closed_result = await db.execute(closed_query)
+    closed = closed_result.scalar() or 0
+    
+    spam_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.is_marked_as_spam == True
+        )
+    )
+    spam_result = await db.execute(spam_query)
+    spam_flagged = spam_result.scalar() or 0
+    
     stats = {
-        "total_assigned": len(assigned_complaints),
-        "pending": len([c for c in assigned_complaints if c.status == "Raised"]),
-        "in_progress": len([c for c in assigned_complaints if c.status == "In Progress"]),
-        "resolved": len([c for c in assigned_complaints if c.status == "Resolved"]),
-        "closed": len([c for c in assigned_complaints if c.status == "Closed"]),
-        "spam_flagged": len([c for c in assigned_complaints if c.is_marked_as_spam]),
-        "avg_resolution_time_hours": None,  # Calculate from resolved complaints
+        "total_assigned": total_assigned,
+        "pending": pending,
+        "in_progress": in_progress,
+        "resolved": resolved,
+        "closed": closed,
+        "spam_flagged": spam_flagged,
+        "avg_resolution_time_hours": None,  # TODO: Calculate from resolved complaints
         "performance_rating": None,
     }
     
@@ -157,14 +249,35 @@ async def get_authority_dashboard(
     recent = await complaint_repo.get_assigned_to_authority(authority_id, skip=0, limit=10)
     
     # Get urgent complaints
-    urgent = [c for c in assigned_complaints if c.priority in ["High", "Critical"]][:10]
+    urgent_query = (
+        select(Complaint)
+        .where(
+            and_(
+                Complaint.assigned_authority_id == authority_id,
+                Complaint.priority.in_(["High", "Critical"]),
+                Complaint.status.in_(["Raised", "In Progress"])
+            )
+        )
+        .order_by(Complaint.priority_score.desc())
+        .limit(10)
+    )
+    urgent_result = await db.execute(urgent_query)
+    urgent = urgent_result.scalars().all()
+    
+    # Get unread notification count
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    unread_count = await notification_repo.count_unread(
+        recipient_type="Authority",
+        recipient_id=str(authority_id)
+    )
     
     return AuthorityDashboard(
         profile=AuthorityProfile.model_validate(authority),
         stats=AuthorityStats(**stats),
         recent_complaints=[ComplaintResponse.model_validate(c) for c in recent],
         urgent_complaints=[ComplaintResponse.model_validate(c) for c in urgent],
-        unread_notifications=0  # Implement notification count
+        unread_notifications=unread_count
     )
 
 
@@ -193,12 +306,17 @@ async def get_assigned_complaints(
         status=status_filter
     )
     
-    # Get total
-    all_complaints = await complaint_repo.get_assigned_to_authority(
-        authority_id,
-        status=status_filter
-    )
-    total = len(all_complaints)
+    # ✅ FIXED: Use count query
+    from sqlalchemy import select, func, and_
+    from src.database.models import Complaint
+    
+    conditions = [Complaint.assigned_authority_id == authority_id]
+    if status_filter:
+        conditions.append(Complaint.status == status_filter)
+    
+    count_query = select(func.count()).where(and_(*conditions))
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
     
     return ComplaintListResponse(
         complaints=[ComplaintResponse.model_validate(c) for c in complaints],
@@ -218,6 +336,7 @@ async def get_assigned_complaints(
 async def update_complaint_status(
     complaint_id: UUID,
     data: ComplaintUpdate,
+    complaint = Depends(get_authority_complaint),  # ✅ Validates assignment
     authority_id: int = Depends(get_current_authority),
     db: AsyncSession = Depends(get_db)
 ):
@@ -226,10 +345,13 @@ async def update_complaint_status(
     
     - **status**: New status (Raised, In Progress, Resolved, Closed)
     - **reason**: Optional reason for status change
+    
+    Automatically creates notification for student.
     """
     try:
         service = ComplaintService(db)
         
+        # Update status
         await service.update_complaint_status(
             complaint_id=complaint_id,
             new_status=data.status,
@@ -237,22 +359,285 @@ async def update_complaint_status(
             reason=data.reason
         )
         
+        # ✅ NEW: Create notification for student
+        await notification_service.create_status_change_notification(
+            db=db,
+            complaint_id=complaint_id,
+            student_roll_no=complaint.student_roll_no,
+            old_status=complaint.status,
+            new_status=data.status
+        )
+        
+        logger.info(f"Complaint {complaint_id} status updated to {data.status} by authority {authority_id}")
+        
         return SuccessResponse(
             success=True,
             message=f"Complaint status updated to '{data.status}'"
         )
         
-    except PermissionError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update this complaint"
-        )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Status update error: {e}")
+        logger.error(f"Status update error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+# ==================== AUTHORITY UPDATES (PUBLIC FEED) ====================
+
+@router.post(
+    "/complaints/{complaint_id}/post-update",
+    response_model=SuccessResponse,
+    summary="Post public update",
+    description="Post status update visible in public feed"
+)
+async def post_public_update(
+    complaint_id: UUID,
+    title: str = Query(..., description="Update title"),
+    content: str = Query(..., description="Update content"),
+    complaint = Depends(get_authority_complaint),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Post public update about complaint progress.
+    
+    Updates are visible in public feed and sent as notifications.
+    
+    Example: "Working on fixing AC, technician assigned"
+    """
+    try:
+        from src.database.models import StatusUpdate
+        
+        # Create status update entry
+        status_update = StatusUpdate(
+            complaint_id=complaint_id,
+            updated_by=authority_id,
+            old_status=complaint.status,
+            new_status=complaint.status,  # Same status, just an update
+            reason=f"{title}: {content}"
+        )
+        
+        db.add(status_update)
+        
+        # Update complaint timestamp
+        complaint.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        
+        # ✅ Create notification for student
+        await notification_service.create_notification(
+            db=db,
+            recipient_type="Student",
+            recipient_id=complaint.student_roll_no,
+            complaint_id=complaint_id,
+            notification_type="complaint_update",
+            message=f"Update on your complaint: {title}"
+        )
+        
+        logger.info(f"Public update posted for complaint {complaint_id} by authority {authority_id}")
+        
+        return SuccessResponse(
+            success=True,
+            message="Update posted successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Post update error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to post update"
+        )
+
+
+# ==================== ESCALATION ====================
+
+@router.post(
+    "/complaints/{complaint_id}/escalate",
+    response_model=SuccessResponse,
+    summary="Escalate complaint",
+    description="Escalate complaint to higher authority level"
+)
+async def escalate_complaint(
+    complaint_id: UUID,
+    reason: str = Query(..., description="Reason for escalation"),
+    complaint = Depends(get_authority_complaint),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Escalate complaint to next authority level.
+    
+    - **reason**: Reason for escalation
+    
+    Finds higher-level authority and reassigns complaint.
+    """
+    try:
+        from src.services.authority_service import authority_service
+        from src.database.models import StatusUpdate
+        
+        # Get current authority level
+        authority_repo = AuthorityRepository(db)
+        current_authority = await authority_repo.get(authority_id)
+        
+        if not current_authority:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Authority not found"
+            )
+        
+        # Find next level authority
+        next_authority = await authority_service.get_escalation_authority(
+            db=db,
+            category_id=complaint.category_id,
+            current_level=current_authority.authority_level,
+            department_id=complaint.complaint_department_id
+        )
+        
+        if not next_authority:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No higher authority available for escalation"
+            )
+        
+        # Store original authority if not already stored
+        if not complaint.original_assigned_authority_id:
+            complaint.original_assigned_authority_id = authority_id
+        
+        # Reassign complaint
+        old_authority_id = complaint.assigned_authority_id
+        complaint.assigned_authority_id = next_authority.id
+        complaint.assigned_at = datetime.now(timezone.utc)
+        complaint.updated_at = datetime.now(timezone.utc)
+        
+        # Create status update
+        status_update = StatusUpdate(
+            complaint_id=complaint_id,
+            updated_by=authority_id,
+            old_status=complaint.status,
+            new_status=complaint.status,
+            reason=f"Escalated to {next_authority.name}: {reason}"
+        )
+        
+        db.add(status_update)
+        await db.commit()
+        
+        # ✅ Create notifications
+        # Notify student
+        await notification_service.create_notification(
+            db=db,
+            recipient_type="Student",
+            recipient_id=complaint.student_roll_no,
+            complaint_id=complaint_id,
+            notification_type="complaint_escalated",
+            message=f"Your complaint has been escalated to {next_authority.name}"
+        )
+        
+        # Notify new authority
+        await notification_service.create_notification(
+            db=db,
+            recipient_type="Authority",
+            recipient_id=str(next_authority.id),
+            complaint_id=complaint_id,
+            notification_type="complaint_assigned",
+            message=f"Escalated complaint assigned: {complaint.rephrased_text[:100]}"
+        )
+        
+        logger.info(
+            f"Complaint {complaint_id} escalated from authority {old_authority_id} "
+            f"to {next_authority.id} (level {next_authority.authority_level})"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Complaint escalated to {next_authority.name}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Escalation error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to escalate complaint"
+        )
+
+
+@router.get(
+    "/complaints/{complaint_id}/escalation-history",
+    summary="Get escalation history",
+    description="Get escalation trail for complaint"
+)
+async def get_escalation_history(
+    complaint_id: UUID,
+    complaint = Depends(get_authority_complaint),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get escalation history for complaint.
+    
+    Shows trail of authority assignments.
+    """
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select
+    from src.database.models import Complaint, StatusUpdate
+    
+    # Get all status updates related to escalation
+    query = (
+        select(StatusUpdate)
+        .options(selectinload(StatusUpdate.updated_by_authority))
+        .where(StatusUpdate.complaint_id == complaint_id)
+        .where(StatusUpdate.reason.like("%Escalated%"))
+        .order_by(StatusUpdate.updated_at)
+    )
+    
+    result = await db.execute(query)
+    escalations = result.scalars().all()
+    
+    history = []
+    
+    # Original assignment
+    if complaint.original_assigned_authority_id:
+        authority_repo = AuthorityRepository(db)
+        original_authority = await authority_repo.get(complaint.original_assigned_authority_id)
+        if original_authority:
+            history.append({
+                "level": original_authority.authority_level,
+                "authority_name": original_authority.name,
+                "authority_type": original_authority.authority_type,
+                "assigned_at": complaint.submitted_at.isoformat(),
+                "is_current": False
+            })
+    
+    # Escalations
+    for escalation in escalations:
+        if escalation.updated_by_authority:
+            history.append({
+                "level": escalation.updated_by_authority.authority_level,
+                "authority_name": escalation.updated_by_authority.name,
+                "authority_type": escalation.updated_by_authority.authority_type,
+                "escalated_at": escalation.updated_at.isoformat(),
+                "reason": escalation.reason,
+                "is_current": False
+            })
+    
+    # Current assignment
+    if complaint.assigned_authority:
+        history.append({
+            "level": complaint.assigned_authority.authority_level,
+            "authority_name": complaint.assigned_authority.name,
+            "authority_type": complaint.assigned_authority.authority_type,
+            "assigned_at": complaint.assigned_at.isoformat() if complaint.assigned_at else None,
+            "is_current": True
+        })
+    
+    return {
+        "complaint_id": str(complaint_id),
+        "escalation_count": len(escalations),
+        "history": history
+    }
 
 
 # ==================== STATISTICS ====================
@@ -268,17 +653,70 @@ async def get_authority_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """Get statistics for current authority."""
-    complaint_repo = ComplaintRepository(db)
+    # ✅ FIXED: Use count queries
+    from sqlalchemy import select, func, and_
+    from src.database.models import Complaint
     
-    assigned_complaints = await complaint_repo.get_assigned_to_authority(authority_id)
+    # Total assigned
+    total_query = select(func.count()).where(
+        Complaint.assigned_authority_id == authority_id
+    )
+    total_result = await db.execute(total_query)
+    total_assigned = total_result.scalar() or 0
+    
+    # By status
+    pending_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Raised"
+        )
+    )
+    pending_result = await db.execute(pending_query)
+    pending = pending_result.scalar() or 0
+    
+    in_progress_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "In Progress"
+        )
+    )
+    in_progress_result = await db.execute(in_progress_query)
+    in_progress = in_progress_result.scalar() or 0
+    
+    resolved_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Resolved"
+        )
+    )
+    resolved_result = await db.execute(resolved_query)
+    resolved = resolved_result.scalar() or 0
+    
+    closed_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.status == "Closed"
+        )
+    )
+    closed_result = await db.execute(closed_query)
+    closed = closed_result.scalar() or 0
+    
+    spam_query = select(func.count()).where(
+        and_(
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.is_marked_as_spam == True
+        )
+    )
+    spam_result = await db.execute(spam_query)
+    spam_flagged = spam_result.scalar() or 0
     
     stats = {
-        "total_assigned": len(assigned_complaints),
-        "pending": len([c for c in assigned_complaints if c.status == "Raised"]),
-        "in_progress": len([c for c in assigned_complaints if c.status == "In Progress"]),
-        "resolved": len([c for c in assigned_complaints if c.status == "Resolved"]),
-        "closed": len([c for c in assigned_complaints if c.status == "Closed"]),
-        "spam_flagged": len([c for c in assigned_complaints if c.is_marked_as_spam]),
+        "total_assigned": total_assigned,
+        "pending": pending,
+        "in_progress": in_progress,
+        "resolved": resolved,
+        "closed": closed,
+        "spam_flagged": spam_flagged,
         "avg_resolution_time_hours": None,
         "performance_rating": None,
     }

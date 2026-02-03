@@ -437,6 +437,88 @@ class AuthorityAnnouncementListResponse(BaseModel):
         }
     }
 
+# ==================== AUTHORITY UPDATES (FOR COMPLAINTS) ====================
+
+class AuthorityUpdateCreate(BaseModel):
+    """
+    Schema for authority posting update about complaint progress.
+    
+    Different from announcements - this is tied to a specific complaint.
+    Used when authority wants to post public update like:
+    "Technician assigned, will fix AC by tomorrow"
+    """
+    
+    title: str = Field(
+        ...,
+        min_length=5,
+        max_length=200,
+        description="Update title/summary"
+    )
+    content: str = Field(
+        ...,
+        min_length=10,
+        max_length=2000,
+        description="Detailed update message"
+    )
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """Validate title"""
+        v = v.strip()
+        if not v:
+            raise ValueError("Title cannot be empty")
+        if v.isupper():
+            raise ValueError("Please avoid writing title in all caps")
+        return v
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        """Validate content"""
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("Content must be at least 10 characters")
+        return v
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "title": "AC Repair Progress Update",
+                "content": "Technician has been assigned and will complete the repair by tomorrow afternoon. Spare parts have been ordered."
+            }
+        }
+    }
+
+
+class AuthorityUpdateResponse(BaseModel):
+    """
+    Schema for authority update response.
+    
+    Returns details of complaint update posted by authority.
+    """
+    
+    update_id: int = Field(..., description="Status update ID")
+    complaint_id: str = Field(..., description="Related complaint UUID")
+    authority_id: int = Field(..., description="Authority who posted update")
+    authority_name: str = Field(..., description="Authority name")
+    title: str = Field(..., description="Update title")
+    content: str = Field(..., description="Update content")
+    posted_at: datetime = Field(..., description="When update was posted")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "update_id": 15,
+                "complaint_id": "123e4567-e89b-12d3-a456-426614174000",
+                "authority_id": 5,
+                "authority_name": "Dr. John Smith",
+                "title": "AC Repair Progress Update",
+                "content": "Technician assigned, repair scheduled for tomorrow.",
+                "posted_at": "2026-02-03T15:30:00"
+            }
+        }
+    }
 
 __all__ = [
     # Authority Management
@@ -449,9 +531,13 @@ __all__ = [
     "AuthorityProfileUpdate",
     "AuthorityListResponse",
     
-    # Authority Announcements
+    # Authority Announcements (general broadcasts)
     "AuthorityAnnouncementCreate",
     "AuthorityAnnouncementUpdate",
     "AuthorityAnnouncementResponse",
     "AuthorityAnnouncementListResponse",
+    
+    # Authority Updates (complaint-specific updates)
+    "AuthorityUpdateCreate",        # ✅ ADDED - for posting updates on complaints
+    "AuthorityUpdateResponse",      # ✅ ADDED - response after posting update
 ]

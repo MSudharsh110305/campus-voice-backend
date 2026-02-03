@@ -329,15 +329,59 @@ class EmailVerification(BaseModel):
             }
         }
     }
-
-
+class StudentListResponse(BaseModel):
+    """
+    Schema for student list response (admin endpoint).
+    
+    Returns paginated list of students with total count.
+    """
+    
+    students: list[StudentProfile] = Field(
+        ...,
+        description="List of student profiles"
+    )
+    total: int = Field(
+        ...,
+        ge=0,
+        description="Total number of students matching filter"
+    )
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "students": [
+                    {
+                        "roll_no": "22CS231",
+                        "name": "John Doe",
+                        "email": "john.doe@college.edu",
+                        "gender": "Male",
+                        "stay_type": "Hostel",
+                        "department_id": 1,
+                        "department_name": "Computer Science & Engineering",
+                        "department_code": "CSE",
+                        "year": 3,
+                        "is_active": True,
+                        "email_verified": True,
+                        "created_at": "2025-06-15T10:30:00"
+                    }
+                ],
+                "total": 150
+            }
+        }
+    }
 __all__ = [
+    # Registration & Authentication
     "StudentRegister",
     "StudentLogin",
+    "StudentResponse",
+    
+    # Profile Management
     "StudentProfile",
     "StudentProfileUpdate",
-    "StudentResponse",
-    "StudentStats",
     "PasswordChange",
     "EmailVerification",
+    
+    # Statistics & Lists
+    "StudentStats",
+    "StudentListResponse",  # ✅ ADDED - for admin list students endpoint
 ]

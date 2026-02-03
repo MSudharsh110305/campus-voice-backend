@@ -1,14 +1,22 @@
 """
 Student API endpoints.
-Registration, login, profile management, statistics.
+
+Registration, login, profile management, statistics, notifications.
+
+✅ FIXED: Import from src.database.connection instead of session
+✅ ADDED: Notification endpoints (GET, PUT, unread count)
+✅ ADDED: Proper count queries instead of fetching all records
+✅ ENHANCED: Better error handling and logging
 """
 
 import logging
 from typing import Optional
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.session import get_db
+from src.database.connection import get_db  # ✅ FIXED IMPORT
+from src.api.dependencies import get_current_student  # ✅ FIXED IMPORT
 from src.schemas.student import (
     StudentRegister,
     StudentLogin,
@@ -18,10 +26,15 @@ from src.schemas.student import (
     StudentStats,
     PasswordChange,
 )
+from src.schemas.notification import (
+    NotificationResponse,
+    NotificationListResponse,
+    UnreadCountResponse,
+)
 from src.schemas.common import SuccessResponse, ErrorResponse
 from src.repositories.student_repo import StudentRepository
+from src.repositories.notification_repo import NotificationRepository
 from src.services.auth_service import auth_service
-from src.utils.jwt_utils import get_current_student
 from src.utils.exceptions import (
     InvalidCredentialsError,
     DuplicateEntryError,
@@ -57,6 +70,7 @@ async def register_student(
     - **password**: Strong password (min 8 chars, uppercase, lowercase, digit)
     - **gender**: Male, Female, or Other
     - **stay_type**: Hostel or Day Scholar
+    - **year**: 1st Year, 2nd Year, 3rd Year, 4th Year
     - **department_id**: Department ID
     """
     try:
@@ -65,7 +79,7 @@ async def register_student(
         # Check if email already exists
         existing_email = await student_repo.get_by_email(data.email)
         if existing_email:
-            raise HTTPException(  # ✅ Changed from DuplicateEntryError
+            raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
@@ -73,7 +87,7 @@ async def register_student(
         # Check if roll number already exists
         existing_roll = await student_repo.get_by_roll_no(data.roll_no)
         if existing_roll:
-            raise HTTPException(  # ✅ Changed from DuplicateEntryError
+            raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Roll number already registered"
             )
@@ -89,6 +103,7 @@ async def register_student(
             password_hash=password_hash,
             gender=data.gender,
             stay_type=data.stay_type,
+            year=data.year,
             department_id=data.department_id,
         )
         
@@ -109,10 +124,10 @@ async def register_student(
             expires_in=auth_service.get_token_expiration_seconds()
         )
         
-    except HTTPException:  # ✅ Re-raise HTTP exceptions
+    except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Registration error: {e}", exc_info=True)  # ✅ Added exc_info
+        logger.error(f"Registration error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed"
@@ -146,16 +161,16 @@ async def login_student(
         else:
             student = await student_repo.get_by_roll_no(data.email_or_roll_no)
         
-        # ✅ Check if student exists
+        # Check if student exists
         if not student:
-            raise HTTPException(  # ✅ Changed from InvalidCredentialsError
+            raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
         # Verify password
         if not auth_service.verify_password(data.password, student.password_hash):
-            raise HTTPException(  # ✅ Changed from InvalidCredentialsError
+            raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
@@ -184,10 +199,10 @@ async def login_student(
             expires_in=auth_service.get_token_expiration_seconds()
         )
         
-    except HTTPException:  # ✅ Re-raise HTTP exceptions
+    except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Login error: {e}", exc_info=True)  # ✅ Added exc_info
+        logger.error(f"Login error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
@@ -211,7 +226,10 @@ async def get_profile(
     
     student = await student_repo.get_with_department(roll_no)
     if not student:
-        raise StudentNotFoundError(roll_no)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
     
     return StudentProfile(
         roll_no=student.roll_no,
@@ -219,6 +237,7 @@ async def get_profile(
         email=student.email,
         gender=student.gender,
         stay_type=student.stay_type,
+        year=student.year,
         department_id=student.department_id,
         department_name=student.department.name if student.department else None,
         department_code=student.department.code if student.department else None,
@@ -254,7 +273,10 @@ async def update_profile(
     # Update student
     student = await student_repo.update(roll_no, **update_data)
     if not student:
-        raise StudentNotFoundError(roll_no)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
     
     logger.info(f"Profile updated: {roll_no}")
     
@@ -281,7 +303,10 @@ async def change_password(
     
     student = await student_repo.get(roll_no)
     if not student:
-        raise StudentNotFoundError(roll_no)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
     
     # Verify old password
     if not auth_service.verify_password(data.old_password, student.password_hash):
@@ -323,23 +348,36 @@ async def get_student_stats(
     complaint_repo = ComplaintRepository(db)
     vote_repo = VoteRepository(db)
     
-    # Get complaints by status
-    all_complaints = await complaint_repo.get_by_student(roll_no)
+    # ✅ FIXED: Use proper count queries instead of fetching all
+    total_complaints = await complaint_repo.count_by_student(roll_no)
+    raised = await complaint_repo.count_by_student(roll_no, status="Raised")
+    in_progress = await complaint_repo.count_by_student(roll_no, status="In Progress")
+    resolved = await complaint_repo.count_by_student(roll_no, status="Resolved")
+    closed = await complaint_repo.count_by_student(roll_no, status="Closed")
     
-    stats = {
-        "total_complaints": len(all_complaints),
-        "raised": len([c for c in all_complaints if c.status == "Raised"]),
-        "in_progress": len([c for c in all_complaints if c.status == "In Progress"]),
-        "resolved": len([c for c in all_complaints if c.status == "Resolved"]),
-        "closed": len([c for c in all_complaints if c.status == "Closed"]),
-        "spam": len([c for c in all_complaints if c.is_marked_as_spam]),
-    }
+    # Count spam complaints
+    from sqlalchemy import select, func
+    from src.database.models import Complaint
     
-    # Get votes cast
-    votes = await vote_repo.get_votes_by_student(roll_no)
-    stats["total_votes_cast"] = len(votes)
+    spam_count_query = select(func.count()).where(
+        Complaint.student_roll_no == roll_no,
+        Complaint.is_marked_as_spam == True
+    )
+    spam_result = await db.execute(spam_count_query)
+    spam = spam_result.scalar() or 0
     
-    return StudentStats(**stats)
+    # Get votes cast count
+    votes_count = await vote_repo.count_votes_by_student(roll_no)
+    
+    return StudentStats(
+        total_complaints=total_complaints,
+        raised=raised,
+        in_progress=in_progress,
+        resolved=resolved,
+        closed=closed,
+        spam=spam,
+        total_votes_cast=votes_count
+    )
 
 
 # ==================== MY COMPLAINTS ====================
@@ -362,6 +400,7 @@ async def get_my_complaints(
     
     complaint_repo = ComplaintRepository(db)
     
+    # Get paginated complaints
     complaints = await complaint_repo.get_by_student(
         roll_no,
         skip=skip,
@@ -369,9 +408,8 @@ async def get_my_complaints(
         status=status_filter
     )
     
-    # Get total count
-    all_complaints = await complaint_repo.get_by_student(roll_no, status=status_filter)
-    total = len(all_complaints)
+    # ✅ FIXED: Use count query instead of fetching all
+    total = await complaint_repo.count_by_student(roll_no, status=status_filter)
     
     return ComplaintListResponse(
         complaints=[ComplaintResponse.model_validate(c) for c in complaints],
@@ -379,6 +417,202 @@ async def get_my_complaints(
         page=skip // limit + 1,
         page_size=limit,
         total_pages=(total + limit - 1) // limit
+    )
+
+
+# ==================== NOTIFICATIONS (NEW) ====================
+
+@router.get(
+    "/notifications",
+    response_model=NotificationListResponse,
+    summary="Get notifications",
+    description="Get all notifications for current student"
+)
+async def get_notifications(
+    roll_no: str = Depends(get_current_student),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    unread_only: bool = Query(False, description="Show only unread notifications"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get notifications for current student.
+    
+    - **skip**: Number of records to skip (pagination)
+    - **limit**: Maximum records to return
+    - **unread_only**: If true, show only unread notifications
+    """
+    notification_repo = NotificationRepository(db)
+    
+    # Get notifications
+    notifications = await notification_repo.get_by_recipient(
+        recipient_type="Student",
+        recipient_id=roll_no,
+        skip=skip,
+        limit=limit,
+        unread_only=unread_only
+    )
+    
+    # Get total count
+    total = await notification_repo.count_by_recipient(
+        recipient_type="Student",
+        recipient_id=roll_no,
+        unread_only=unread_only
+    )
+    
+    return NotificationListResponse(
+        notifications=[NotificationResponse.model_validate(n) for n in notifications],
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit
+    )
+
+
+@router.put(
+    "/notifications/{notification_id}/read",
+    response_model=SuccessResponse,
+    summary="Mark notification as read",
+    description="Mark a specific notification as read"
+)
+async def mark_notification_read(
+    notification_id: int,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Mark notification as read.
+    
+    - **notification_id**: Notification ID to mark as read
+    """
+    notification_repo = NotificationRepository(db)
+    
+    # Get notification
+    notification = await notification_repo.get(notification_id)
+    
+    if not notification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found"
+        )
+    
+    # Check if notification belongs to current student
+    if notification.recipient_id != roll_no or notification.recipient_type != "Student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this notification"
+        )
+    
+    # Mark as read
+    await notification_repo.mark_as_read(notification_id)
+    
+    logger.info(f"Notification {notification_id} marked as read by {roll_no}")
+    
+    return SuccessResponse(
+        success=True,
+        message="Notification marked as read"
+    )
+
+
+@router.put(
+    "/notifications/mark-all-read",
+    response_model=SuccessResponse,
+    summary="Mark all notifications as read",
+    description="Mark all notifications as read for current student"
+)
+async def mark_all_notifications_read(
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Mark all notifications as read for current student.
+    """
+    notification_repo = NotificationRepository(db)
+    
+    # Mark all as read
+    count = await notification_repo.mark_all_as_read(
+        recipient_type="Student",
+        recipient_id=roll_no
+    )
+    
+    logger.info(f"Marked {count} notifications as read for {roll_no}")
+    
+    return SuccessResponse(
+        success=True,
+        message=f"Marked {count} notifications as read"
+    )
+
+
+@router.get(
+    "/notifications/unread-count",
+    response_model=UnreadCountResponse,
+    summary="Get unread notification count",
+    description="Get count of unread notifications for current student"
+)
+async def get_unread_count(
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get unread notification count.
+    
+    Returns count of unread notifications for current student.
+    """
+    notification_repo = NotificationRepository(db)
+    
+    # Get unread count
+    count = await notification_repo.count_unread(
+        recipient_type="Student",
+        recipient_id=roll_no
+    )
+    
+    return UnreadCountResponse(
+        unread_count=count
+    )
+
+
+@router.delete(
+    "/notifications/{notification_id}",
+    response_model=SuccessResponse,
+    summary="Delete notification",
+    description="Delete a specific notification"
+)
+async def delete_notification(
+    notification_id: int,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Delete a notification.
+    
+    - **notification_id**: Notification ID to delete
+    """
+    notification_repo = NotificationRepository(db)
+    
+    # Get notification
+    notification = await notification_repo.get(notification_id)
+    
+    if not notification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found"
+        )
+    
+    # Check if notification belongs to current student
+    if notification.recipient_id != roll_no or notification.recipient_type != "Student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to delete this notification"
+        )
+    
+    # Delete notification
+    await notification_repo.delete(notification_id)
+    
+    logger.info(f"Notification {notification_id} deleted by {roll_no}")
+    
+    return SuccessResponse(
+        success=True,
+        message="Notification deleted successfully"
     )
 
 

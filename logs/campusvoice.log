@@ -62,3 +62,102 @@
 2026-02-03 15:03:16 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 46613 -> 33762 bytes (27.6% reduction)
 2026-02-03 15:03:24 | [32mINFO[0m | campusvoice | file_upload:validate_image_bytes:168 | Image validation passed
 2026-02-03 15:03:25 | [32mINFO[0m | campusvoice | file_upload:optimize_image_bytes:244 | Image optimized: 1969049 -> 446524 bytes (77.3% reduction), resized from (5472, 3648) to (1920, 1280)
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 15:55:25 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 16:05:46 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 16:10:51 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 16:46:41 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 17:01:23 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 17:28:06 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 19:08:25 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 19:08:50 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 19:10:44 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 19:10:56 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:26 | ============================================================
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:28 | ============================================================
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:29 | Environment: development
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:30 | Host: 0.0.0.0
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:31 | Port: 8000
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:32 | Debug Mode: True
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:33 | Workers: 4
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:34 | Database: PostgreSQL
+2026-02-03 19:32:06 | [32mINFO[0m | campusvoice | main:main:35 | ============================================================
