@@ -1,6 +1,10 @@
 """
 SQLAlchemy ORM models for CampusVoice.
 All database tables with relationships, constraints, and indexes.
+
+✅ FIXED: Image storage using binary columns
+✅ FIXED: ImageVerificationLog - removed image_url, added llm_response
+✅ ADDED: Proper indexes for image queries
 """
 
 from datetime import datetime
@@ -14,10 +18,12 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
+
 Base = declarative_base()
 
 
 # ==================== CORE TABLES ====================
+
 
 class Department(Base):
     """Department model - 13 engineering departments"""
@@ -52,7 +58,6 @@ class ComplaintCategory(Base):
     description = Column(Text, nullable=True)
     keywords = Column(ARRAY(String), nullable=True)
     
-    # ✅ FIXED: Added default_authority_id for routing
     default_authority_id = Column(
         BigInteger,
         ForeignKey("authorities.id", ondelete="SET NULL"),
@@ -100,7 +105,7 @@ class Student(Base):
         CheckConstraint("stay_type IN ('Hostel', 'Day Scholar')", name="check_stay_type"),
         CheckConstraint("year IN ('1st Year', '2nd Year', '3rd Year', '4th Year')", name="check_year"),
         Index("idx_student_dept_year_stay", "department_id", "year", "stay_type"),
-        Index("idx_student_year_stay", "year", "stay_type", "is_active"),  # ✅ ADDED: For feed filtering
+        Index("idx_student_year_stay", "year", "stay_type", "is_active"),
         Index("idx_student_active", "is_active"),
     )
     
@@ -147,7 +152,12 @@ class Authority(Base):
 
 
 class Complaint(Base):
-    """Complaint model - main table for student complaints"""
+    """Complaint model - main table for student complaints
+    
+    ✅ FIXED: Image storage using binary columns for database storage
+    ✅ REMOVED: image_url column (legacy, not needed)
+    ✅ ADDED: image_verified and image_verification_status columns
+    """
     __tablename__ = "complaints"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -169,21 +179,26 @@ class Complaint(Base):
     spam_flagged_by = Column(BigInteger, ForeignKey("authorities.id", ondelete="SET NULL"), nullable=True)
     spam_flagged_at = Column(DateTime(timezone=True), nullable=True)
     
-    # ✅ FIXED: Image storage - using LargeBinary for cross-DB compatibility
-    image_data = Column(LargeBinary, nullable=True)
-    image_filename = Column(String(255), nullable=True)
-    image_mimetype = Column(String(100), nullable=True)
-    image_size = Column(Integer, nullable=True)
+    # ✅ IMAGE STORAGE - Binary columns for database storage
+    image_data = Column(LargeBinary, nullable=True)  # Original image binary
+    image_filename = Column(String(255), nullable=True)  # Original filename
+    image_mimetype = Column(String(100), nullable=True)  # MIME type (image/jpeg, image/png)
+    image_size = Column(Integer, nullable=True)  # Size in bytes
     
-    # ✅ ADDED: Thumbnail storage
-    thumbnail_data = Column(LargeBinary, nullable=True)
-    thumbnail_size = Column(Integer, nullable=True)
+    # ✅ THUMBNAIL - Optimized smaller version
+    thumbnail_data = Column(LargeBinary, nullable=True)  # Thumbnail binary (200x200)
+    thumbnail_size = Column(Integer, nullable=True)  # Thumbnail size in bytes
     
-    image_url = Column(Text, nullable=True)
-    image_verified = Column(Boolean, default=False, nullable=False)
-    image_verification_status = Column(String(50), nullable=True)
+    # ✅ IMAGE VERIFICATION - Status tracking
+    image_verified = Column(Boolean, default=False, nullable=False, index=True)
+    image_verification_status = Column(String(50), nullable=True, index=True)
+    # Status values: 'Pending', 'Verified', 'Rejected', 'Error'
+    
+    # Cross-department tracking
     complaint_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     is_cross_department = Column(Boolean, default=False, nullable=False)
+    
+    # Timestamps
     submitted_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
     resolved_at = Column(DateTime(timezone=True), nullable=True)
@@ -208,18 +223,27 @@ class Complaint(Base):
         CheckConstraint("upvotes >= 0", name="check_upvotes"),
         CheckConstraint("downvotes >= 0", name="check_downvotes"),
         CheckConstraint("image_size >= 0", name="check_image_size"),
-        CheckConstraint("thumbnail_size >= 0", name="check_thumbnail_size"),  # ✅ ADDED
+        CheckConstraint("thumbnail_size >= 0", name="check_thumbnail_size"),
         CheckConstraint(
-            "image_verification_status IN ('Pending', 'Verified', 'Rejected')",
+            "image_verification_status IN ('Pending', 'Verified', 'Rejected', 'Error')",
             name="check_image_verification_status"
-        ),  # ✅ ADDED
+        ),
+        # Performance indexes
         Index("idx_complaint_status_priority", "status", "priority_score"),
         Index("idx_complaint_student_status", "student_roll_no", "status"),
         Index("idx_complaint_visibility_status", "visibility", "status", "submitted_at"),
+        # ✅ NEW: Image-specific indexes
+        Index("idx_complaint_has_image", "image_verified", postgresql_where=(Column("image_data").isnot(None))),
+        Index("idx_complaint_image_pending", "image_verification_status", postgresql_where=(Column("image_verification_status") == "Pending")),
     )
     
     def __repr__(self):
         return f"<Complaint(id={str(self.id)[:8]}, status={self.status}, priority={self.priority})>"
+    
+    @property
+    def has_image(self) -> bool:
+        """Check if complaint has an image attached"""
+        return self.image_data is not None
 
 
 class AuthorityUpdate(Base):
@@ -310,6 +334,7 @@ class StatusUpdate(Base):
 
 # ==================== SUPPORT TABLES ====================
 
+
 class AuthorityRoutingRule(Base):
     """Authority routing rules - complaint routing configuration"""
     __tablename__ = "authority_routing_rules"
@@ -334,20 +359,44 @@ class AuthorityRoutingRule(Base):
 
 
 class ImageVerificationLog(Base):
-    """Image verification log - LLM image relevance check"""
+    """Image verification log - LLM image relevance check
+    
+    ✅ FIXED: Removed image_url column (image is in Complaint table)
+    ✅ ADDED: llm_response JSONB column for full verification result
+    """
     __tablename__ = "image_verification_logs"
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     complaint_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="CASCADE"), nullable=False, index=True)
-    image_url = Column(Text, nullable=True)
-    llm_response = Column(JSONB, nullable=True)
-    is_relevant = Column(Boolean, nullable=False)
+    
+    # ✅ REMOVED: image_url column (redundant - image is in complaints.image_data)
+    
+    # Verification results
+    is_relevant = Column(Boolean, nullable=False, index=True)
     confidence_score = Column(Float, nullable=True)
     rejection_reason = Column(Text, nullable=True)
-    verified_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    
+    # ✅ NEW: Store full LLM response for debugging/analysis
+    llm_response = Column(JSONB, nullable=True)
+    # Contains: {
+    #   "is_relevant": bool,
+    #   "confidence": float,
+    #   "reason": str,
+    #   "detected_objects": [...],
+    #   "visible_issues": [...],
+    #   "quality_rating": str,
+    #   "is_appropriate": bool
+    # }
+    
+    verified_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
     
     # Relationships
     complaint = relationship("Complaint", back_populates="image_verification_logs")
+    
+    __table_args__ = (
+        # Index for querying rejected images
+        Index("idx_image_verification_rejected", "is_relevant", "verified_at", postgresql_where=(Column("is_relevant") == False)),
+    )
     
     def __repr__(self):
         return f"<ImageVerificationLog(relevant={self.is_relevant}, confidence={self.confidence_score})>"
