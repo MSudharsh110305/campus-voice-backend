@@ -116,9 +116,9 @@ class CampusVoiceClient:
             print_error(f"Request failed: {e}")
             raise
 
-    def post(self, path: str, json: dict = None, files: dict = None, headers: dict = None) -> httpx.Response:
+    def post(self, path: str, json: dict = None, data: dict = None, files: dict = None, headers: dict = None) -> httpx.Response:
         """POST request"""
-        return self._request("POST", path, json=json, files=files, headers=headers)
+        return self._request("POST", path, json=json, data=data, files=files, headers=headers)
 
     def get(self, path: str, params: dict = None, headers: dict = None) -> httpx.Response:
         """GET request"""

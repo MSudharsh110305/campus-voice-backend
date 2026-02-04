@@ -377,7 +377,7 @@ TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
 # ==================== REGEX PATTERNS ====================
 
 EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-ROLL_NO_PATTERN = re.compile(r'^[0-9]{2}[A-Z]{2,4}[0-9]{3,4}$')
+ROLL_NO_PATTERN = re.compile(r'^[0-9]{2}[A-Z_]{2,10}[0-9]{3,4}$')  # Fixed: Allow up to 10 chars for dept codes like CIVIL, MTECH_CSE
 PHONE_PATTERN = re.compile(r'^[6-9]\d{9}$')
 PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
 
