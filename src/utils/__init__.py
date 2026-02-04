@@ -25,13 +25,32 @@ from .exceptions import (
     FileTooLargeError,
     to_http_exception,
 )
-from .jwt_utils import (
-    get_current_user,
-    get_current_student,
-    get_current_authority,
-    extract_token_from_header,
-    verify_token_role,
-)
+
+# Robust import of JWT utilities (some projects expose different names)
+try:
+    from .jwt_utils import (
+        get_current_user,
+        get_current_student,
+        get_current_authority,
+        extract_token_from_header,
+        verify_token_role,
+        security,
+    )
+except Exception:
+    def _missing(name: str):
+        def _fn(*args, **kwargs):
+            raise ImportError(f"'{name}' is not available in src.utils.jwt_utils. "
+                              "Ensure jwt_utils exports this symbol.")
+        return _fn
+
+    # placeholders to fail with helpful message if called
+    get_current_user = _missing("get_current_user")
+    get_current_student = _missing("get_current_student")
+    get_current_authority = _missing("get_current_authority")
+    extract_token_from_header = _missing("extract_token_from_header")
+    verify_token_role = _missing("verify_token_role")
+    security = None
+
 from .rate_limiter import RateLimiter, rate_limiter
 from .validators import (
     validate_email,
@@ -81,12 +100,13 @@ __all__ = [
     "FileTooLargeError",
     "to_http_exception",
     
-    # JWT Utils
+    # JWT Utils (may be placeholders if jwt_utils missing symbols)
     "get_current_user",
     "get_current_student",
     "get_current_authority",
     "extract_token_from_header",
     "verify_token_role",
+    "security",
     
     # Rate Limiter
     "RateLimiter",

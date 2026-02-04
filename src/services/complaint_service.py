@@ -88,9 +88,9 @@ class ComplaintService:
 
         # Build context for LLM
         context = {
-            "gender": student.gender,
-            "stay_type": student.stay_type,
-            "department": student.department.code if student.department else "Unknown"
+            "gender": student.gender or "Unknown",
+            "stay_type": student.stay_type or "Unknown",
+            "department": student.department.code if (student.department and hasattr(student.department, 'code')) else "Unknown"
         }
 
         # LLM Processing
