@@ -287,7 +287,7 @@ async def get_authority_dashboard(
     "/complaints",
     response_model=ComplaintListResponse,
     summary="Get assigned complaints",
-    description="Get all complaints assigned to current authority"
+    description="Get all complaints assigned to current authority (with partial anonymity)"
 )
 async def get_assigned_complaints(
     authority_id: int = Depends(get_current_authority),
@@ -296,35 +296,124 @@ async def get_assigned_complaints(
     status_filter: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get complaints assigned to current authority."""
+    """
+    ✅ UPDATED: Get complaints assigned to current authority with partial anonymity.
+
+    **Partial Anonymity Rules**:
+    - Non-spam complaints: Student information is hidden
+    - Spam complaints: Student information is revealed to help identify repeat offenders
+    """
     complaint_repo = ComplaintRepository(db)
-    
+    authority_repo = AuthorityRepository(db)
+
+    # Check if authority is admin
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+
     complaints = await complaint_repo.get_assigned_to_authority(
         authority_id,
         skip=skip,
         limit=limit,
         status=status_filter
     )
-    
+
     # ✅ FIXED: Use count query
     from sqlalchemy import select, func, and_
     from src.database.models import Complaint
-    
+
     conditions = [Complaint.assigned_authority_id == authority_id]
     if status_filter:
         conditions.append(Complaint.status == status_filter)
-    
+
     count_query = select(func.count()).where(and_(*conditions))
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
-    
+
+    # ✅ NEW: Apply partial anonymity to complaint list
+    complaint_responses = []
+    for complaint in complaints:
+        response_dict = ComplaintResponse.model_validate(complaint).model_dump()
+
+        # Apply partial anonymity
+        if is_admin:
+            # Admin sees all student info
+            response_dict["student_roll_no"] = complaint.student_roll_no
+            response_dict["student_name"] = complaint.student.name if complaint.student else None
+        elif complaint.is_marked_as_spam:
+            # Authority sees student info for spam complaints
+            response_dict["student_roll_no"] = complaint.student_roll_no
+            response_dict["student_name"] = complaint.student.name if complaint.student else None
+        else:
+            # Non-spam: Hide student info from authorities
+            response_dict["student_roll_no"] = None
+            response_dict["student_name"] = None
+
+        complaint_responses.append(ComplaintResponse(**response_dict))
+
     return ComplaintListResponse(
-        complaints=[ComplaintResponse.model_validate(c) for c in complaints],
+        complaints=complaint_responses,
         total=total,
         page=skip // limit + 1,
         page_size=limit,
         total_pages=(total + limit - 1) // limit
     )
+
+
+@router.get(
+    "/complaints/{complaint_id}",
+    summary="Get complaint details",
+    description="Get detailed complaint information with partial anonymity"
+)
+async def get_complaint_details_for_authority(
+    complaint_id: UUID,
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ✅ NEW: Get detailed complaint with partial anonymity enforcement.
+
+    **Partial Anonymity Rules**:
+    - Admin: Can view all student information
+    - Authority (non-spam): Student information is hidden
+    - Authority (spam): Student information is revealed
+    """
+    try:
+        authority_repo = AuthorityRepository(db)
+        authority = await authority_repo.get(authority_id)
+
+        if not authority:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Authority not found"
+            )
+
+        is_admin = authority.authority_type == "Admin"
+
+        service = ComplaintService(db)
+        complaint_data = await service.get_complaint_for_authority(
+            complaint_id=complaint_id,
+            authority_id=authority_id,
+            is_admin=is_admin
+        )
+
+        return complaint_data
+
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error fetching complaint {complaint_id} for authority {authority_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch complaint details"
+        )
 
 
 @router.put(
