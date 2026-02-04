@@ -57,42 +57,91 @@ router = APIRouter(prefix="/complaints", tags=["Complaints"])
     response_model=ComplaintSubmitResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Submit complaint",
-    description="Submit a new complaint with LLM processing"
+    description="Submit a new complaint with LLM processing and optional image"
 )
 async def create_complaint(
-    data: ComplaintCreate,
+    category_id: int = Query(..., description="Complaint category ID"),
+    original_text: str = Query(..., min_length=10, max_length=2000, description="Complaint text"),
+    visibility: str = Query("Public", description="Visibility level"),
+    image: Optional[UploadFile] = File(None, description="Optional complaint image"),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Submit a new complaint.
-    
+    ✅ UPDATED: Submit a new complaint with LLM-driven image requirement check.
+
     The complaint will be:
+    - Checked for spam/abusive content (rejected if spam)
+    - Analyzed to determine if image is REQUIRED
+    - Rejected if required image is missing
     - Categorized using AI
     - Rephrased for professionalism
-    - Checked for spam
     - Routed to appropriate authority
     - Prioritized based on content
+    - Image verified if provided
+
+    **Important**:
+    - Spam/abusive complaints are rejected outright (HTTP 400)
+    - Some complaints require images based on AI analysis
+    - If image is required but not provided, complaint is rejected (HTTP 400)
+
+    **Multipart form data required if image is uploaded**
     """
     try:
         service = ComplaintService(db)
-        
+
         result = await service.create_complaint(
             student_roll_no=roll_no,
-            category_id=data.category_id,
-            original_text=data.original_text,
-            visibility=data.visibility or "Public"
+            category_id=category_id,
+            original_text=original_text,
+            visibility=visibility,
+            image_file=image  # ✅ NEW: Pass image file
         )
-        
+
         return ComplaintSubmitResponse(**result)
-        
+
+    except ValueError as e:
+        # ✅ NEW: ValueError indicates spam rejection or missing required image
+        error_message = str(e)
+        logger.warning(f"Complaint rejected for {roll_no}: {error_message}")
+
+        # Determine if it's spam or missing image
+        is_spam = "spam" in error_message.lower() or "abusive" in error_message.lower()
+        is_missing_image = "image" in error_message.lower() and "required" in error_message.lower()
+
+        if is_spam:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": "Complaint marked as spam/abusive",
+                    "reason": error_message,
+                    "is_spam": True
+                }
+            )
+        elif is_missing_image:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": "Image required",
+                    "reason": error_message,
+                    "image_required": True
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_message
+            )
+
     except Exception as e:
-        logger.error(f"Complaint creation error: {e}")
+        logger.error(f"Complaint creation error: {e}", exc_info=True)
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Failed to create complaint: {str(e)}"
         )
 
 

@@ -46,27 +46,32 @@ class ComplaintService:
     ) -> Dict[str, Any]:
         """
         Create a new complaint with full LLM processing and optional image.
-        
+
         ✅ UPDATED: Accepts image_file (UploadFile) instead of image_url
-        
+        ✅ UPDATED: Implements spam rejection (doesn't create complaint if spam)
+        ✅ UPDATED: Enforces image requirement via LLM
+
         Args:
             student_roll_no: Student roll number
             category_id: Category ID
             original_text: Original complaint text
             visibility: Visibility level (Public, Private, Anonymous)
             image_file: Optional uploaded image file
-        
+
         Returns:
             Dictionary with complaint details and image verification results
+
+        Raises:
+            ValueError: If spam detected or required image missing
         """
         # Get student with department
         student = await self.student_repo.get_with_department(student_roll_no)
         if not student:
             raise ValueError("Student not found")
-        
+
         if not student.is_active:
             raise ValueError("Student account is inactive")
-        
+
         # ✅ FIXED: Check spam blacklist
         blacklist_check = await spam_detection_service.check_spam_blacklist(
             self.db, student_roll_no
@@ -77,30 +82,78 @@ class ComplaintService:
                 error_msg += " This is a permanent ban."
             elif blacklist_check.get('expires_at'):
                 error_msg += f" Ban expires on {blacklist_check['expires_at']}."
-            
+
             logger.warning(f"Blacklisted user {student_roll_no} attempted to create complaint")
             raise ValueError(error_msg)
-        
+
         # Build context for LLM
         context = {
             "gender": student.gender,
             "stay_type": student.stay_type,
             "department": student.department.code if student.department else "Unknown"
         }
-        
+
         # LLM Processing
         logger.info(f"Processing complaint for {student_roll_no}")
-        
+
         try:
-            # 1. Categorize and get priority
-            categorization = await llm_service.categorize_complaint(original_text, context)
-            
-            # 2. Rephrase for professionalism
-            rephrased_text = await llm_service.rephrase_complaint(original_text)
-            
-            # 3. Check for spam
+            # 1. Check for spam FIRST (before processing)
             spam_check = await llm_service.detect_spam(original_text)
-            
+
+            # ✅ NEW: REJECT spam complaints outright (don't create)
+            if spam_check.get("is_spam"):
+                spam_reason = spam_check.get("reason", "Content flagged as spam or abusive")
+                logger.warning(
+                    f"Spam complaint rejected for {student_roll_no}: {spam_reason}"
+                )
+
+                # Log spam attempt for monitoring (optional)
+                spam_count = await spam_detection_service.get_spam_count(
+                    self.db, student_roll_no
+                )
+
+                # If multiple spam attempts, consider blacklisting
+                if spam_count >= 3:
+                    await spam_detection_service.add_to_blacklist(
+                        db=self.db,
+                        student_roll_no=student_roll_no,
+                        reason=f"Multiple spam attempts ({spam_count + 1} total)",
+                        is_permanent=False,
+                        ban_duration_days=7
+                    )
+                    error_msg = f"Complaint marked as spam/abusive: {spam_reason}. Account temporarily suspended due to multiple violations."
+                else:
+                    error_msg = f"Complaint marked as spam/abusive: {spam_reason}"
+
+                # ✅ CRITICAL: Raise error (don't create complaint)
+                raise ValueError(error_msg)
+
+            # 2. Categorize and get priority
+            categorization = await llm_service.categorize_complaint(original_text, context)
+
+            # 3. Rephrase for professionalism
+            rephrased_text = await llm_service.rephrase_complaint(original_text)
+
+            # ✅ NEW: 4. Check if image is REQUIRED for this complaint
+            image_requirement = await llm_service.check_image_requirement(
+                complaint_text=original_text,
+                category=categorization.get("category")
+            )
+
+            # ✅ NEW: Enforce image requirement
+            if image_requirement.get("image_required") and not image_file:
+                reason = image_requirement.get("reasoning", "Visual evidence required")
+                suggested = image_requirement.get("suggested_evidence", "relevant photo")
+                error_msg = (
+                    f"This complaint requires supporting images. {reason}. "
+                    f"Please upload at least one image showing {suggested}."
+                )
+                logger.warning(f"Image required but not provided for {student_roll_no}: {reason}")
+                raise ValueError(error_msg)
+
+        except ValueError:
+            # Re-raise ValueError (spam rejection or missing image)
+            raise
         except Exception as e:
             logger.error(f"LLM processing error: {e}")
             # Fallback values
@@ -110,7 +163,7 @@ class ComplaintService:
                 "is_against_authority": False
             }
             rephrased_text = original_text
-            spam_check = {"is_spam": False}
+            image_requirement = {"image_required": False}
         
         # Map category name to ID (if LLM returned name instead of ID)
         if "category" in categorization:
@@ -121,17 +174,14 @@ class ComplaintService:
             category_row = category_result.first()
             if category_row:
                 category_id = category_row[0]
-        
+
         # Calculate initial priority score
         priority = categorization.get("priority", "Medium")
         priority_score = PRIORITY_SCORES.get(priority, 50.0)
-        
-        # Determine initial status
-        if spam_check.get("is_spam"):
-            initial_status = "Spam"
-        else:
-            initial_status = "Raised"
-        
+
+        # ✅ UPDATED: Spam is rejected before reaching this point, so status is always "Raised"
+        initial_status = "Raised"
+
         # ✅ FIXED: Use timezone-aware datetime
         current_time = datetime.now(timezone.utc)
         
@@ -163,7 +213,7 @@ class ComplaintService:
                 # Continue without image
                 image_bytes = None
         
-        # Create complaint (without image verification first)
+        # ✅ UPDATED: Create complaint (spam is rejected, so no spam fields needed)
         complaint = await self.complaint_repo.create(
             student_roll_no=student_roll_no,
             category_id=category_id,
@@ -173,8 +223,8 @@ class ComplaintService:
             priority=priority,
             priority_score=priority_score,
             status=initial_status,
-            is_marked_as_spam=spam_check.get("is_spam", False),
-            spam_reason=spam_check.get("reason") if spam_check.get("is_spam") else None,
+            is_marked_as_spam=False,  # Spam complaints are rejected, never created
+            spam_reason=None,
             complaint_department_id=student.department_id,
             # ✅ NEW: Binary image fields
             has_image=image_bytes is not None,
@@ -215,49 +265,49 @@ class ComplaintService:
                 logger.error(f"Image verification error: {e}")
                 image_verification_message = f"Verification error: {str(e)}"
         
-        # Route to appropriate authority (if not spam)
+        # ✅ UPDATED: Route to appropriate authority (spam is already rejected)
         authority = None
-        if not spam_check.get("is_spam"):
-            try:
-                authority = await authority_service.route_complaint(
+        try:
+            authority = await authority_service.route_complaint(
+                self.db,
+                category_id,
+                student.department_id,
+                categorization.get("is_against_authority", False)
+            )
+
+            if authority:
+                complaint.assigned_authority_id = authority.id
+                complaint.assigned_at = current_time
+                await self.db.commit()
+
+                # Create notification for authority
+                await notification_service.create_notification(
                     self.db,
-                    category_id,
-                    student.department_id,
-                    categorization.get("is_against_authority", False)
+                    recipient_type="Authority",
+                    recipient_id=str(authority.id),
+                    complaint_id=complaint.id,
+                    notification_type="complaint_assigned",
+                    message=f"New complaint assigned: {rephrased_text[:100]}..."
                 )
-                
-                if authority:
-                    complaint.assigned_authority_id = authority.id
-                    complaint.assigned_at = current_time
-                    await self.db.commit()
-                    
-                    # Create notification for authority
-                    await notification_service.create_notification(
-                        self.db,
-                        recipient_type="Authority",
-                        recipient_id=str(authority.id),
-                        complaint_id=complaint.id,
-                        notification_type="complaint_assigned",
-                        message=f"New complaint assigned: {rephrased_text[:100]}..."
-                    )
-                    
-                    logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
-                else:
-                    logger.warning(f"No authority found for complaint {complaint.id}")
-                    
-            except Exception as e:
-                logger.error(f"Authority routing error: {e}")
-                # Continue without authority assignment
-        
+
+                logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
+            else:
+                logger.warning(f"No authority found for complaint {complaint.id}")
+
+        except Exception as e:
+            logger.error(f"Authority routing error: {e}")
+            # Continue without authority assignment
+
         logger.info(
             f"Complaint {complaint.id} created successfully - "
             f"Status: {initial_status}, Priority: {priority}, "
-            f"Has Image: {image_bytes is not None}"
+            f"Has Image: {image_bytes is not None}, "
+            f"Image Required: {image_requirement.get('image_required', False)}"
         )
-        
+
         return {
             "id": str(complaint.id),
-            "status": "Submitted" if not spam_check.get("is_spam") else "Flagged as Spam",
+            "status": "Submitted",
             "rephrased_text": rephrased_text,
             "original_text": original_text,
             "priority": priority,
@@ -265,15 +315,17 @@ class ComplaintService:
             "assigned_authority": authority.name if authority else None,
             "assigned_authority_id": authority.id if authority else None,
             "created_at": current_time.isoformat(),
-            "message": "Complaint submitted successfully" if not spam_check.get("is_spam") 
-                      else f"Complaint flagged as spam: {spam_check.get('reason', 'Unknown reason')}",
+            "message": "Complaint submitted successfully",
             # ✅ NEW: Image information
             "has_image": image_bytes is not None,
             "image_verified": image_verified,
             "image_verification_status": image_verification_status,
             "image_verification_message": image_verification_message,
             "image_filename": image_filename,
-            "image_size": image_size
+            "image_size": image_size,
+            # ✅ NEW: Image requirement information
+            "image_was_required": image_requirement.get("image_required", False),
+            "image_requirement_reasoning": image_requirement.get("reasoning")
         }
     
     async def upload_complaint_image(
@@ -668,15 +720,15 @@ class ComplaintService:
     ) -> Dict[str, Any]:
         """
         Get complaint statistics for a student.
-        
+
         Args:
             student_roll_no: Student roll number
-        
+
         Returns:
             Statistics dictionary
         """
         complaints = await self.complaint_repo.get_by_student(student_roll_no)
-        
+
         total = len(complaints)
         resolved = sum(1 for c in complaints if c.status == "Resolved")
         in_progress = sum(1 for c in complaints if c.status == "In Progress")
@@ -684,7 +736,7 @@ class ComplaintService:
         spam = sum(1 for c in complaints if c.is_marked_as_spam)
         with_images = sum(1 for c in complaints if c.has_image)  # ✅ NEW
         verified_images = sum(1 for c in complaints if c.image_verified)  # ✅ NEW
-        
+
         return {
             "total_complaints": total,
             "resolved": resolved,
@@ -696,6 +748,106 @@ class ComplaintService:
             "with_images": with_images,
             "verified_images": verified_images
         }
+
+    # ==================== PARTIAL ANONYMITY ====================
+
+    async def get_complaint_for_authority(
+        self,
+        complaint_id: UUID,
+        authority_id: int,
+        is_admin: bool = False
+    ) -> Dict[str, Any]:
+        """
+        ✅ NEW: Get complaint with partial anonymity enforcement.
+
+        Rules:
+        - Admin: Can view all student information for all complaints
+        - Authority: Can view student info ONLY if complaint is marked as spam
+        - Non-spam complaints: Hide student personal details from authorities
+
+        Args:
+            complaint_id: Complaint UUID
+            authority_id: Authority requesting details
+            is_admin: Whether requester is admin
+
+        Returns:
+            Complaint with conditionally redacted student info
+        """
+        complaint = await self.complaint_repo.get_with_relations(complaint_id)
+        if not complaint:
+            raise ValueError("Complaint not found")
+
+        # Check if authority has permission to view
+        if not is_admin and complaint.assigned_authority_id != authority_id:
+            raise PermissionError("Not authorized to view this complaint")
+
+        # Build base response
+        response = {
+            "id": str(complaint.id),
+            "original_text": complaint.original_text,
+            "rephrased_text": complaint.rephrased_text,
+            "category": complaint.category.name if complaint.category else "Unknown",
+            "priority": complaint.priority,
+            "priority_score": complaint.priority_score,
+            "status": complaint.status,
+            "visibility": complaint.visibility,
+            "upvotes": complaint.upvotes,
+            "downvotes": complaint.downvotes,
+            "created_at": complaint.created_at.isoformat(),
+            "updated_at": complaint.updated_at.isoformat() if complaint.updated_at else None,
+            "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
+            "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else None,
+            "is_spam": complaint.is_marked_as_spam,
+            "spam_reason": complaint.spam_reason,
+            # Image fields
+            "has_image": complaint.has_image,
+            "image_verified": complaint.image_verified,
+            "image_verification_status": complaint.image_verification_status,
+            "image_filename": complaint.image_filename,
+            "image_size": complaint.image_size
+        }
+
+        # ✅ CRITICAL: Partial Anonymity Logic
+        if is_admin:
+            # Admin can see ALL student information
+            response["student_roll_no"] = complaint.student_roll_no
+            response["student_name"] = complaint.student.name if complaint.student else None
+            response["student_email"] = complaint.student.email if complaint.student else None
+            response["student_gender"] = complaint.student.gender if complaint.student else None
+            response["student_stay_type"] = complaint.student.stay_type if complaint.student else None
+            response["student_year"] = complaint.student.year if complaint.student else None
+            response["student_department"] = complaint.student.department.name if complaint.student and complaint.student.department else None
+            logger.info(f"Admin {authority_id} viewing complaint {complaint_id} - Full student info provided")
+
+        elif complaint.is_marked_as_spam:
+            # Authority can see student info for SPAM complaints
+            response["student_roll_no"] = complaint.student_roll_no
+            response["student_name"] = complaint.student.name if complaint.student else None
+            response["student_email"] = complaint.student.email if complaint.student else None
+            response["student_gender"] = complaint.student.gender if complaint.student else None
+            response["student_stay_type"] = complaint.student.stay_type if complaint.student else None
+            response["student_year"] = complaint.student.year if complaint.student else None
+            response["student_department"] = complaint.student.department.name if complaint.student and complaint.student.department else None
+            logger.info(
+                f"Authority {authority_id} viewing SPAM complaint {complaint_id} - "
+                f"Student info revealed: {complaint.student_roll_no}"
+            )
+
+        else:
+            # Non-spam complaints: Hide student details from authorities
+            response["student_roll_no"] = "Hidden (non-spam)"
+            response["student_name"] = "Hidden (non-spam)"
+            response["student_email"] = "Hidden (non-spam)"
+            response["student_gender"] = None
+            response["student_stay_type"] = None
+            response["student_year"] = None
+            response["student_department"] = None
+            logger.info(
+                f"Authority {authority_id} viewing NON-SPAM complaint {complaint_id} - "
+                f"Student info hidden (partial anonymity)"
+            )
+
+        return response
 
 
 __all__ = ["ComplaintService"]

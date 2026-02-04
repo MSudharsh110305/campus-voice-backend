@@ -483,12 +483,140 @@ JSON Response:"""
             "reason": f"Found {len(common_words)} common keywords between complaint and image description"
         }
     
+    # ==================== IMAGE REQUIREMENT DETECTION ====================
+
+    @retry(
+        stop=stop_after_attempt(settings.LLM_MAX_RETRIES),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        retry=retry_if_exception_type((httpx.HTTPError, TimeoutError))
+    )
+    async def check_image_requirement(
+        self,
+        complaint_text: str,
+        category: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Determine if complaint requires image evidence using LLM.
+
+        Args:
+            complaint_text: Complaint text to analyze
+            category: Optional category hint
+
+        Returns:
+            Dictionary with image_required, reasoning, confidence
+        """
+        if not complaint_text or len(complaint_text.strip()) < MIN_COMPLAINT_LENGTH:
+            logger.warning("Text too short for image requirement check")
+            return {
+                "image_required": False,
+                "reasoning": "Complaint text too short to analyze",
+                "confidence": 0.5
+            }
+
+        prompt = self._build_image_requirement_prompt(complaint_text, category)
+
+        try:
+            response = await asyncio.to_thread(
+                self.groq_client.chat.completions.create,
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,  # Lower for more consistent decisions
+                max_tokens=300,
+                timeout=self.timeout
+            )
+
+            content = response.choices[0].message.content
+            result = self._extract_json_from_response(content)
+
+            if not result or "image_required" not in result:
+                logger.warning("Invalid image requirement response, using fallback")
+                return self._fallback_image_requirement(complaint_text)
+
+            logger.info(
+                f"Image requirement check: {result['image_required']} "
+                f"(Confidence: {result.get('confidence', 'N/A')})"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Image requirement check error: {e}")
+            return self._fallback_image_requirement(complaint_text)
+
+    def _build_image_requirement_prompt(self, text: str, category: Optional[str]) -> str:
+        """Build prompt for image requirement detection"""
+        category_hint = f"\nCategory: {category}" if category else ""
+
+        return f"""Analyze this complaint and determine if visual evidence (images/photos) is REQUIRED for proper verification and resolution.
+
+Complaint Text:
+"{text}"{category_hint}
+
+Image is REQUIRED for:
+- Infrastructure issues (broken/damaged items, leaks, structural problems)
+- Cleanliness issues (dirty areas, unhygienic conditions)
+- Equipment malfunction (visible damage or defects)
+- Safety hazards (exposed wires, broken furniture, hazardous conditions)
+- Facility problems (broken doors, windows, cracks, stains)
+- Visible proof needed (graffiti, unauthorized items, visible violations)
+
+Image is OPTIONAL/NOT REQUIRED for:
+- Abstract/policy issues (rules, procedures, timings)
+- Service-related complaints (staff behavior, response time)
+- Academic issues (course content, faculty concerns)
+- Request for improvements (suggestions without specific issues)
+- Abstract concerns (noise, temperature preferences without visible cause)
+- Personal issues (interpersonal conflicts, requests)
+
+Task: Determine if this complaint REQUIRES image evidence.
+
+Respond ONLY with valid JSON (no markdown):
+{{
+  "image_required": true|false,
+  "reasoning": "Brief explanation why image is/isn't required (max 50 words)",
+  "confidence": 0.0-1.0,
+  "suggested_evidence": "What the image should show (only if required)"
+}}
+
+JSON Response:"""
+
+    def _fallback_image_requirement(self, text: str) -> Dict[str, Any]:
+        """Fallback logic for image requirement detection"""
+        text_lower = text.lower()
+
+        # Keywords that typically require visual evidence
+        requires_image_keywords = [
+            "broken", "damaged", "leaking", "leak", "dirty", "filthy", "stain",
+            "crack", "torn", "not working", "malfunctioning", "defective",
+            "unhygienic", "unclean", "blocked", "clogged", "rusty", "peeling",
+            "exposed wire", "hanging", "falling", "detached", "missing",
+            "visible", "see", "look", "show", "picture", "photo"
+        ]
+
+        # Count matches
+        matches = sum(1 for keyword in requires_image_keywords if keyword in text_lower)
+
+        # Determine if image is required
+        image_required = matches >= 2  # At least 2 strong indicators
+        confidence = min(0.5 + (matches * 0.1), 0.9)
+
+        logger.info(
+            f"Fallback image requirement: {image_required} "
+            f"(Matches: {matches}, Confidence: {confidence:.2f})"
+        )
+
+        return {
+            "image_required": image_required,
+            "reasoning": f"Keyword-based analysis detected {matches} visual problem indicators" if image_required else "No strong visual evidence requirements detected",
+            "confidence": confidence,
+            "suggested_evidence": "Photo showing the issue clearly" if image_required else None
+        }
+
     # ==================== UTILITY METHODS ====================
-    
+
     def get_service_stats(self) -> Dict[str, Any]:
         """
         Get LLM service statistics and configuration.
-        
+
         Returns:
             Service statistics
         """

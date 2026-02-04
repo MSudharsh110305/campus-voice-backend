@@ -235,20 +235,30 @@ class ComplaintDetailResponse(ComplaintResponse):
 
 class ComplaintSubmitResponse(BaseModel):
     """Schema for complaint submission response"""
-    
+
     id: UUID
     status: str
     message: str
     rephrased_text: Optional[str] = None
     priority: str
     assigned_authority: Optional[str] = None
-    
+
     # ✅ NEW: Image processing results
     has_image: bool = False
     image_verified: bool = False
     image_verification_status: Optional[str] = None
     image_verification_message: Optional[str] = None
-    
+
+    # ✅ NEW: Image requirement information
+    image_was_required: bool = Field(
+        default=False,
+        description="Whether image was required by LLM for this complaint"
+    )
+    image_requirement_reasoning: Optional[str] = Field(
+        default=None,
+        description="LLM reasoning for image requirement decision"
+    )
+
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -261,7 +271,9 @@ class ComplaintSubmitResponse(BaseModel):
                 "has_image": True,
                 "image_verified": True,
                 "image_verification_status": "Verified",
-                "image_verification_message": "Image is relevant to the complaint"
+                "image_verification_message": "Image is relevant to the complaint",
+                "image_was_required": True,
+                "image_requirement_reasoning": "Infrastructure issue requiring visual evidence"
             }
         }
     }
