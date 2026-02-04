@@ -302,20 +302,23 @@ class PaginationParams:
         }
 
 
-def get_pagination() -> PaginationParams:
+def get_pagination(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum records to return")
+) -> PaginationParams:
     """
     Dependency to get pagination parameters.
-    
+
     Returns:
         PaginationParams with skip, limit, page
-    
+
     Usage:
         @router.get("/items")
         async def list_items(pagination: PaginationParams = Depends(get_pagination)):
             skip = pagination.skip
             limit = pagination.limit
     """
-    return PaginationParams
+    return PaginationParams(skip=skip, limit=limit)
 
 
 # ==================== QUERY FILTERS ====================
