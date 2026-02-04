@@ -15,7 +15,7 @@ CRUD operations, voting, filtering, image upload, verification, tracking.
 import logging
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,9 +60,9 @@ router = APIRouter(prefix="/complaints", tags=["Complaints"])
     description="Submit a new complaint with LLM processing and optional image"
 )
 async def create_complaint(
-    category_id: int = Query(..., description="Complaint category ID"),
-    original_text: str = Query(..., min_length=10, max_length=2000, description="Complaint text"),
-    visibility: str = Query("Public", description="Visibility level"),
+    category_id: int = Form(..., description="Complaint category ID"),
+    original_text: str = Form(..., min_length=10, max_length=2000, description="Complaint text"),
+    visibility: str = Form(default="Public", description="Visibility level"),
     image: Optional[UploadFile] = File(None, description="Optional complaint image"),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)

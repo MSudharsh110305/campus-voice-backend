@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config.settings import settings
 from src.utils.logger import app_logger
+# Import the FastAPI app from the in-memory test app (test_main.py)
+from test_main import app
 
 
 def main():
@@ -36,12 +38,10 @@ def main():
     
     # Run with Uvicorn
     uvicorn.run(
-        "src.api:app",  # ✅ Correct: uses lifespan from src.api.__init__.py
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG,
-        workers=settings.WORKERS if not settings.DEBUG else 1,
-        log_level=settings.LOG_LEVEL.lower(),
+        app,  # ✅ Correct: uses lifespan from src.api.__init__.py
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
         access_log=True,
         use_colors=True,
         loop="asyncio",

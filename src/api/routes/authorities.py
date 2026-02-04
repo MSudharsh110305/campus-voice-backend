@@ -284,7 +284,7 @@ async def get_authority_dashboard(
 # ==================== COMPLAINT MANAGEMENT ====================
 
 @router.get(
-    "/complaints",
+    "/my-complaints",
     response_model=ComplaintListResponse,
     summary="Get assigned complaints",
     description="Get all complaints assigned to current authority (with partial anonymity)"

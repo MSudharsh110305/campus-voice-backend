@@ -292,7 +292,8 @@ def test_complaint_submission_with_image_requirement(client: CampusVoiceClient, 
             # First, try submitting without image
             response = client.post(
                 "/api/complaints/submit",
-                json={
+                data={
+                    "category_id": "1",  # Default to category 1 (Hostel/General)
                     "original_text": complaint_data['text'],
                     "visibility": complaint_data['visibility']
                 },
@@ -316,10 +317,11 @@ def test_complaint_submission_with_image_requirement(client: CampusVoiceClient, 
                         else:
                             image_data = create_test_image()
 
-                        files = {"images": ("test.jpg", image_data, "image/jpeg")}
+                        files = {"image": ("test.jpg", image_data, "image/jpeg")}
                         response = client.post(
                             "/api/complaints/submit",
                             data={
+                                "category_id": "1",  # Default to category 1
                                 "original_text": complaint_data['text'],
                                 "visibility": complaint_data['visibility']
                             },
@@ -377,7 +379,8 @@ def test_spam_detection(client: CampusVoiceClient, ctx: TestContext):
             print_info(f"Submitting spam complaint: '{spam_text[:40]}...'")
             response = client.post(
                 "/api/complaints/submit",
-                json={
+                data={
+                    "category_id": "1",
                     "original_text": spam_text,
                     "visibility": "Public"
                 },
@@ -450,7 +453,8 @@ def test_public_feed_filtering(client: CampusVoiceClient, ctx: TestContext):
         print_info("Creating hostel-specific complaint...")
         response = client.post(
             "/api/complaints/submit",
-            json={
+            data={
+                "category_id": "1",  # Hostel category
                 "original_text": "The hostel mess food quality needs improvement",
                 "visibility": "Public"
             },
@@ -504,7 +508,8 @@ def test_public_feed_filtering(client: CampusVoiceClient, ctx: TestContext):
             # Create department-specific complaint
             response = client.post(
                 "/api/complaints/submit",
-                json={
+                data={
+                    "category_id": "3",  # Department category
                     "original_text": "CSE lab computers need maintenance",
                     "visibility": "Department"
                 },
@@ -862,7 +867,8 @@ def test_role_escalation(client: CampusVoiceClient, ctx: TestContext):
         print_info("Submitting complaint about warden...")
         response = client.post(
             "/api/complaints/submit",
-            json={
+            data={
+                "category_id": "1",  # Hostel category
                 "original_text": "The warden is not responding to maintenance requests in the hostel",
                 "visibility": "Public"
             },
