@@ -1,0 +1,1025 @@
+===============================================================================
+CAMPUSVOICE API - COMPLETE REFERENCE FOR FRONTEND INTEGRATION
+===============================================================================
+Base URL: http://localhost:8000
+API Prefix: /api
+Start Server: python main.py
+Swagger Docs: http://localhost:8000/docs (dev only)
+
+===============================================================================
+1. AUTHENTICATION
+===============================================================================
+
+All protected endpoints require:
+  Header: Authorization: Bearer <token>
+
+Token is returned on login/register. JWT with HS256 algorithm.
+Expires in 604800 seconds (7 days).
+Token payload: { "sub": "<roll_no or authority_id>", "role": "Student|Authority|Admin", "exp": <timestamp> }
+
+PUBLIC ENDPOINTS (no token needed):
+  POST /api/students/register
+  POST /api/students/login
+  POST /api/authorities/login
+  GET  /health
+  GET  /health/detailed
+
+ALL OTHER ENDPOINTS REQUIRE A VALID TOKEN.
+
+CORS:
+  Allowed Origins: ["http://localhost:3000"] (configurable via .env CORS_ORIGINS)
+  Allowed Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS
+  Allowed Headers: * (all)
+  Credentials: true
+
+===============================================================================
+2. ENUMS & VALID VALUES
+===============================================================================
+
+DEPARTMENTS (use department_id, not code):
+  1  = CSE   (Computer Science & Engineering)
+  2  = ECE   (Electronics & Communication Engineering)
+  3  = RAA   (Robotics and Automation)
+  4  = MECH  (Mechanical Engineering)
+  5  = EEE   (Electrical & Electronics Engineering)
+  6  = EIE   (Electronics & Instrumentation Engineering)
+  7  = BIO   (Biomedical Engineering)
+  8  = AERO  (Aeronautical Engineering)
+  9  = CIVIL (Civil Engineering)
+  10 = IT    (Information Technology)
+  11 = MBA   (Management Studies)
+  12 = AIDS  (Artificial Intelligence and Data Science)
+  13 = MTECH_CSE (M.Tech in Computer Science and Engineering)
+
+COMPLAINT CATEGORIES (use category_id):
+  1 = Hostel                (room, warden, mess, food, water, bathroom, fan)
+  2 = General               (canteen, library, playground, wifi, parking)
+  3 = Department            (lab, class, exam, faculty, professor)
+  4 = Disciplinary Committee (ragging, harassment, bullying, safety)
+
+COMPLAINT STATUS VALUES:
+  "Raised"       -> can transition to: "In Progress", "Spam", "Closed"
+  "In Progress"  -> can transition to: "Resolved", "Raised", "Closed"
+  "Resolved"     -> can transition to: "Closed", "Raised"
+  "Closed"       -> (terminal, no further transitions)
+  "Spam"         -> can transition to: "Closed"
+
+PRIORITY LEVELS:
+  "Low"      (score 0-49)
+  "Medium"   (score 50-99)
+  "High"     (score 100-199)
+  "Critical" (score 200+)
+
+VISIBILITY LEVELS:
+  "Private"     - only the student and assigned authority can see
+  "Department"  - department members and authority can see
+  "Public"      - all students (with filtering rules below)
+
+PUBLIC FEED FILTERING RULES:
+  - Only "Public" and "Department" visibility complaints shown
+  - Complaints with status "Closed" are hidden
+  - Day Scholar students CANNOT see Hostel category complaints
+  - Students only see Department complaints from their own department
+
+GENDER: "Male" | "Female" | "Other"
+STAY TYPE: "Hostel" | "Day Scholar"
+STUDENT YEAR: integer 1-10 (1=1st year, 2=2nd year, etc.)
+VOTE TYPE: "Upvote" | "Downvote"
+
+AUTHORITY TYPES (hierarchy, higher level = more power):
+  Warden                  (level 5)
+  HOD                     (level 8)
+  Deputy Warden           (level 10)
+  Senior Deputy Warden    (level 15)
+  Disciplinary Committee  (level 20)
+  Admin Officer           (level 50)
+  Admin                   (level 100)
+
+COMPLAINT ROUTING (auto-assigned on submission):
+  Hostel category                -> Warden
+  General category               -> Admin Officer
+  Department category            -> HOD
+  Disciplinary Committee category -> Disciplinary Committee
+
+ESCALATION PATH:
+  Warden -> Deputy Warden -> Senior Deputy Warden -> Admin Officer -> Admin
+  HOD -> Admin Officer -> Admin
+
+===============================================================================
+3. STUDENT ENDPOINTS
+===============================================================================
+
+--- 3.1 Register Student ---
+POST /api/students/register
+Auth: None
+Content-Type: application/json
+Status: 201
+
+Request Body:
+{
+  "roll_no": "22CS231",          // string, 5-20 chars, alphanumeric, REQUIRED, UNIQUE
+  "name": "Arjun Kumar",        // string, 2-255 chars, no digits allowed, REQUIRED
+  "email": "arjun@college.edu", // valid email, REQUIRED, UNIQUE
+  "password": "SecurePass1",    // min 8 chars, needs 1 uppercase + 1 lowercase + 1 digit, REQUIRED
+  "gender": "Male",             // "Male" | "Female" | "Other", REQUIRED
+  "stay_type": "Hostel",        // "Hostel" | "Day Scholar", REQUIRED
+  "department_id": 1,           // integer > 0, REQUIRED (see dept list above)
+  "year": 2                     // integer 1-10, OPTIONAL
+}
+
+Response (201):
+{
+  "roll_no": "22CS231",
+  "name": "Arjun Kumar",
+  "email": "arjun@college.edu",
+  "year": 2,
+  "department_id": 1,
+  "department_name": "Computer Science & Engineering",
+  "token": "eyJhbGciOiJIUzI...",
+  "token_type": "Bearer",
+  "expires_in": 604800
+}
+
+Errors:
+  400 - Email or roll_no already registered
+  422 - Validation errors (password too weak, invalid roll_no, etc.)
+
+
+--- 3.2 Login Student ---
+POST /api/students/login
+Auth: None
+Content-Type: application/json
+Status: 200
+
+Request Body:
+{
+  "email_or_roll_no": "arjun@college.edu",  // string, min 3 chars, email OR roll_no, REQUIRED
+  "password": "SecurePass1"                  // string, min 8 chars, REQUIRED
+}
+
+Response (200): same as register response
+
+Errors:
+  401 - Invalid credentials
+  403 - Account inactive
+
+
+--- 3.3 Get Profile ---
+GET /api/students/profile
+Auth: Student token required
+Status: 200
+
+Response (200):
+{
+  "roll_no": "22CS231",
+  "name": "Arjun Kumar",
+  "email": "arjun@college.edu",
+  "gender": "Male",
+  "stay_type": "Hostel",
+  "department_id": 1,
+  "department_name": "Computer Science & Engineering",
+  "department_code": "CSE",
+  "year": 2,
+  "is_active": true,
+  "email_verified": true,
+  "created_at": "2026-02-01T10:30:00"
+}
+
+
+--- 3.4 Update Profile ---
+PUT /api/students/profile
+Auth: Student token required
+Content-Type: application/json
+Status: 200
+
+Request Body (all fields optional):
+{
+  "name": "Arjun Kumar S",        // 2-255 chars, no digits
+  "email": "arjun2@college.edu",  // valid email
+  "phone": "9876543210",          // 10 digits, starts with 6-9
+  "year": 3                       // 1-10
+}
+
+Response (200): same as Get Profile response
+
+
+--- 3.5 Change Password ---
+POST /api/students/change-password
+Auth: Student token required
+Content-Type: application/json
+Status: 200
+
+Request Body:
+{
+  "old_password": "SecurePass1",     // min 8 chars, REQUIRED
+  "new_password": "NewPass123",      // min 8 chars, 1 upper+1 lower+1 digit, different from old, REQUIRED
+  "confirm_password": "NewPass123"   // must match new_password, REQUIRED
+}
+
+Response (200):
+{ "success": true, "message": "Password changed successfully" }
+
+
+--- 3.6 Get Student Stats ---
+GET /api/students/stats
+Auth: Student token required
+Status: 200
+
+Response (200):
+{
+  "total_complaints": 10,
+  "raised": 2,
+  "in_progress": 3,
+  "resolved": 4,
+  "closed": 1,
+  "spam": 0,
+  "total_votes_cast": 25
+}
+
+
+--- 3.7 Get My Complaints ---
+GET /api/students/my-complaints
+Auth: Student token required
+Status: 200
+
+Query Parameters:
+  skip=0         (integer >= 0, default 0)
+  limit=20       (integer 1-100, default 20)
+  status_filter  (optional: "Raised" | "In Progress" | "Resolved" | "Closed" | "Spam")
+
+Response (200):
+{
+  "complaints": [ <ComplaintResponse objects> ],
+  "total": 10,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1
+}
+
+ComplaintResponse fields:
+{
+  "id": "uuid-string",
+  "category_id": 1,
+  "category_name": "Hostel" | null,
+  "original_text": "...",
+  "rephrased_text": "...",
+  "visibility": "Public",
+  "upvotes": 5,
+  "downvotes": 0,
+  "priority": "Medium",
+  "priority_score": 50.5,
+  "status": "Raised",
+  "assigned_authority_name": "Warden" | null,
+  "is_marked_as_spam": false,
+  "has_image": true,
+  "image_verified": true,
+  "image_verification_status": "Verified" | "Pending" | "Rejected" | null,
+  "submitted_at": "2026-02-01T10:00:00Z",
+  "updated_at": "2026-02-01T12:00:00Z",
+  "resolved_at": "2026-02-03T15:00:00Z" | null,
+  "student_roll_no": "22CS231" | null,
+  "student_name": "Arjun Kumar" | null
+}
+
+NOTE: student_roll_no and student_name are null in public feed (privacy).
+      They are visible in my-complaints and to authorities for spam complaints.
+
+
+--- 3.8 Get Notifications ---
+GET /api/students/notifications
+Auth: Student token required
+Status: 200
+
+Query Parameters:
+  skip=0          (integer >= 0, default 0)
+  limit=20        (integer 1-100, default 20)
+  unread_only=false  (boolean, default false)
+
+Response (200):
+{
+  "notifications": [
+    {
+      "id": 1,
+      "recipient_type": "Student",
+      "complaint_id": "uuid-string" | null,
+      "notification_type": "status_update",
+      "message": "Your complaint status changed to In Progress",
+      "is_read": false,
+      "created_at": "2026-02-01T10:00:00Z",
+      "read_at": null,
+      "complaint_title": null,
+      "complaint_status": null
+    }
+  ],
+  "total": 10,
+  "unread_count": 3
+}
+
+
+--- 3.9 Get Unread Count ---
+GET /api/students/notifications/unread-count
+Auth: Student token required
+Status: 200
+
+Response (200):
+{ "unread_count": 3 }
+
+
+--- 3.10 Mark Notification as Read ---
+PUT /api/students/notifications/{notification_id}/read
+Auth: Student token required
+Path: notification_id (integer)
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Notification marked as read" }
+
+
+--- 3.11 Mark All Notifications as Read ---
+PUT /api/students/notifications/mark-all-read
+Auth: Student token required
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Marked 5 notifications as read" }
+
+
+--- 3.12 Delete Notification ---
+DELETE /api/students/notifications/{notification_id}
+Auth: Student token required
+Path: notification_id (integer)
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Notification deleted successfully" }
+
+
+===============================================================================
+4. COMPLAINT ENDPOINTS
+===============================================================================
+
+--- 4.1 Submit Complaint ---
+POST /api/complaints/submit
+Auth: Student token required
+Content-Type: multipart/form-data
+Status: 201
+
+Form Data Fields:
+  category_id:    1               (integer > 0, REQUIRED)
+  original_text:  "complaint..."  (string, 10-2000 chars, not ALL CAPS, REQUIRED)
+  visibility:     "Public"        (optional, default "Public": "Private"|"Department"|"Public")
+  image:          <file>          (optional, JPEG/PNG/GIF/WebP, max 5MB)
+
+IMPORTANT PROCESSING FLOW:
+  1. Text is checked for spam/abuse -> if spam, returns 400
+  2. LLM analyzes if image evidence is needed -> if needed but missing, returns 400
+  3. LLM categorizes the complaint into a category
+  4. LLM rephrases text professionally
+  5. Complaint routed to appropriate authority
+  6. Priority assigned by LLM
+  7. If image provided, it is verified by Groq Vision API
+
+Response (201):
+{
+  "id": "uuid-string",
+  "status": "Submitted",
+  "message": "Your complaint has been submitted and assigned to the Hostel Warden",
+  "rephrased_text": "...",
+  "priority": "Medium",
+  "assigned_authority": "Hostel Warden",
+  "has_image": false,
+  "image_verified": false,
+  "image_verification_status": null,
+  "image_verification_message": null,
+  "image_was_required": false,
+  "image_requirement_reasoning": null
+}
+
+Errors:
+  400 - Spam detected, image required but missing, validation error
+  500 - Server error during LLM processing
+
+
+--- 4.2 Get Public Feed ---
+GET /api/complaints/public-feed
+Auth: Student token required
+Status: 200
+
+Query Parameters:
+  skip=0    (integer >= 0)
+  limit=20  (integer 1-100)
+
+Response (200): ComplaintListResponse (same structure as my-complaints)
+  NOTE: student_roll_no and student_name are always null (privacy)
+  NOTE: Filtering rules apply (see section 2)
+
+
+--- 4.3 Get Complaint Details ---
+GET /api/complaints/{complaint_id}
+Auth: Student token required
+Path: complaint_id (UUID string)
+Status: 200
+
+Response (200) - ComplaintDetailResponse (extends ComplaintResponse):
+{
+  // ... all ComplaintResponse fields ...
+  "student_department": "1" | null,
+  "student_gender": "Male" | null,
+  "student_stay_type": "Hostel" | null,
+  "student_year": 2 | null,
+  "complaint_department_id": 1 | null,
+  "is_cross_department": false,
+  "status_updates": [
+    {
+      "old_status": "Raised",
+      "new_status": "In Progress",
+      "reason": "Forwarded to maintenance",
+      "updated_by": 2,
+      "updated_at": "2026-02-01T12:00:00+00:00"
+    }
+  ] | null,
+  "comments_count": 2,
+  "vote_count": 5,
+  "image_filename": "broken_fan.jpg" | null,
+  "image_size": 245678 | null,
+  "image_mimetype": "image/jpeg" | null
+}
+
+Errors:
+  404 - Complaint not found or not visible to current user
+
+
+--- 4.4 Vote on Complaint ---
+POST /api/complaints/{complaint_id}/vote
+Auth: Student token required
+Path: complaint_id (UUID)
+Content-Type: application/json
+Status: 200
+
+Request Body:
+{
+  "vote_type": "Upvote"   // "Upvote" | "Downvote", REQUIRED
+}
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "upvotes": 15,
+  "downvotes": 2,
+  "priority_score": 51.3,
+  "priority": "Medium",
+  "user_vote": "Upvote"
+}
+
+RULES:
+  - Each student can vote once per complaint
+  - Upvote adds +5 to priority score
+  - Downvote adds -3 to priority score
+  - Priority level auto-adjusts based on total score
+
+Errors:
+  400 - Already voted on this complaint
+
+
+--- 4.5 Remove Vote ---
+DELETE /api/complaints/{complaint_id}/vote
+Auth: Student token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Vote removed successfully" }
+
+
+--- 4.6 Check My Vote ---
+GET /api/complaints/{complaint_id}/my-vote
+Auth: Student token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "has_voted": true,
+  "vote_type": "Upvote" | "Downvote" | null
+}
+
+
+--- 4.7 Upload Image to Complaint ---
+POST /api/complaints/{complaint_id}/upload-image
+Auth: Student token required (must own the complaint)
+Content-Type: multipart/form-data
+Path: complaint_id (UUID)
+Status: 200
+
+Form Data:
+  file: <binary image file>  (JPEG/PNG/GIF/WebP, max 5MB)
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "has_image": true,
+  "image_verified": true,
+  "verification_status": "Verified",
+  "verification_message": "Image is relevant to the complaint",
+  "image_filename": "broken_fan.jpg",
+  "image_size": 245678,
+  "image_mimetype": "image/jpeg",
+  "confidence_score": 0.95
+}
+
+
+--- 4.8 Get Complaint Image ---
+GET /api/complaints/{complaint_id}/image
+Auth: Student token required
+Path: complaint_id (UUID)
+Query: thumbnail=false (boolean, optional)
+Status: 200
+
+Response: Binary image data
+  Content-Type: image/jpeg or image/png
+  Content-Disposition: inline; filename="image.jpg"
+
+Use thumbnail=true for 200x200 optimized version.
+
+Errors:
+  404 - No image attached
+
+
+--- 4.9 Verify Complaint Image ---
+POST /api/complaints/{complaint_id}/verify-image
+Auth: Student token required (must own the complaint)
+Path: complaint_id (UUID)
+Status: 200
+
+Triggers Groq Vision API verification on the existing image.
+
+Response (200): ImageUploadResponse (same as upload response)
+
+
+--- 4.10 Get Status History ---
+GET /api/complaints/{complaint_id}/status-history
+Auth: Student token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "current_status": "Resolved",
+  "status_updates": [
+    {
+      "old_status": "Raised",
+      "new_status": "In Progress",
+      "reason": "Maintenance team notified",
+      "updated_by": "Dr. Rajesh Kumar",
+      "updated_at": "2026-02-01T12:00:00+00:00"
+    }
+  ]
+}
+
+
+--- 4.11 Get Complaint Timeline ---
+GET /api/complaints/{complaint_id}/timeline
+Auth: Student token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "timeline": [
+    {
+      "event": "Complaint Submitted",
+      "timestamp": "2026-02-01T10:00:00+00:00",
+      "description": "Complaint raised by Arjun Kumar"
+    },
+    {
+      "event": "Status Changed",
+      "timestamp": "2026-02-01T12:00:00+00:00",
+      "description": "Status changed from Raised to In Progress",
+      "reason": "Maintenance team notified",
+      "updated_by": "Dr. Rajesh Kumar"
+    },
+    {
+      "event": "Complaint Resolved",
+      "timestamp": "2026-02-03T15:00:00+00:00",
+      "description": "Complaint marked as resolved"
+    }
+  ]
+}
+
+
+--- 4.12 Advanced Filter ---
+GET /api/complaints/filter/advanced
+Auth: Student token required
+Status: 200
+
+Query Parameters (all optional):
+  skip=0              (integer >= 0)
+  limit=20            (integer 1-100)
+  status              ("Raised"|"In Progress"|"Resolved"|"Closed"|"Spam")
+  priority            ("Low"|"Medium"|"High"|"Critical")
+  category_id         (integer)
+  has_image           (boolean)
+  image_verified      (boolean)
+  search              (string, min 2 chars)
+  date_from           (ISO datetime, e.g. "2026-01-01T00:00:00")
+  date_to             (ISO datetime)
+
+Response (200): ComplaintListResponse
+
+
+===============================================================================
+5. AUTHORITY ENDPOINTS
+===============================================================================
+
+--- 5.1 Authority Login ---
+POST /api/authorities/login
+Auth: None
+Content-Type: application/json
+Status: 200
+
+Request Body:
+{
+  "email": "warden@college.edu",   // valid email, REQUIRED
+  "password": "SecurePass123!"     // min 8 chars, REQUIRED
+}
+
+Response (200):
+{
+  "id": 2,
+  "name": "Dr. Rajesh Kumar",
+  "email": "warden@college.edu",
+  "authority_type": "Warden",
+  "department_id": null,
+  "designation": "Chief Warden",
+  "token": "eyJhbGciOiJIUzI...",
+  "token_type": "Bearer",
+  "expires_in": 604800
+}
+
+
+--- 5.2 Get Authority Profile ---
+GET /api/authorities/profile
+Auth: Authority token required
+Status: 200
+
+Response (200):
+{
+  "id": 2,
+  "name": "Dr. Rajesh Kumar",
+  "email": "warden@college.edu",
+  "phone": "9876543210" | null,
+  "authority_type": "Warden",
+  "department_id": null,
+  "department_name": null,
+  "designation": "Chief Warden",
+  "authority_level": 5,
+  "is_active": true,
+  "created_at": "2025-08-15T09:00:00"
+}
+
+
+--- 5.3 Get Dashboard ---
+GET /api/authorities/dashboard
+Auth: Authority token required
+Status: 200
+
+Response (200):
+{
+  "profile": { /* AuthorityProfile */ },
+  "stats": {
+    "total_assigned": 50,
+    "pending": 5,
+    "in_progress": 10,
+    "resolved": 30,
+    "closed": 5,
+    "spam_flagged": 2,
+    "avg_resolution_time_hours": 24.5 | null,
+    "performance_rating": 4.5 | null
+  },
+  "recent_complaints": [ /* list of complaint dicts */ ],
+  "urgent_complaints": [ /* high/critical priority complaints */ ],
+  "unread_notifications": 3
+}
+
+
+--- 5.4 Get Assigned Complaints ---
+GET /api/authorities/my-complaints
+Auth: Authority token required
+Status: 200
+
+Query Parameters:
+  skip=0         (integer >= 0)
+  limit=20       (integer 1-100)
+  status_filter  (optional status string)
+
+PRIVACY RULE:
+  - Non-spam complaints: student_roll_no and student_name are null (hidden)
+  - Spam complaints: student info is visible
+  - Admin (level 100): can see all student info
+
+Response (200): ComplaintListResponse
+
+
+--- 5.5 Get Specific Complaint ---
+GET /api/authorities/complaints/{complaint_id}
+Auth: Authority token required (must be assigned)
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200): ComplaintDetailResponse (same as student detail view)
+  Privacy rules apply.
+
+
+--- 5.6 Update Complaint Status ---
+PUT /api/authorities/complaints/{complaint_id}/status
+Auth: Authority token required (must be assigned)
+Path: complaint_id (UUID)
+Content-Type: application/json
+Status: 200
+
+Request Body:
+{
+  "status": "In Progress",              // REQUIRED - see valid transitions above
+  "reason": "Maintenance team notified"  // OPTIONAL (REQUIRED for "Closed" or "Spam")
+}
+
+Response (200):
+{ "success": true, "message": "Complaint status updated to 'In Progress'" }
+
+SIDE EFFECTS:
+  - Creates a StatusUpdate record
+  - Sends notification to the student
+  - If status is "Resolved", sets resolved_at timestamp
+
+Errors:
+  400 - Invalid status transition
+  403 - Not assigned to this complaint
+  404 - Complaint not found
+
+
+--- 5.7 Post Update on Complaint ---
+POST /api/authorities/complaints/{complaint_id}/post-update
+Auth: Authority token required (must be assigned)
+Path: complaint_id (UUID)
+Status: 200
+
+Query Parameters:
+  title:   "Plumber dispatched"  (REQUIRED)
+  content: "A plumber has been dispatched..." (REQUIRED)
+
+Response (200):
+{ "success": true, "message": "Update posted successfully" }
+
+SIDE EFFECTS:
+  - Creates a StatusUpdate record
+  - Sends notification to the student
+
+
+--- 5.8 Escalate Complaint ---
+POST /api/authorities/complaints/{complaint_id}/escalate
+Auth: Authority token required (must be assigned)
+Path: complaint_id (UUID)
+Status: 200
+
+Query Parameters:
+  reason: "Issue requires higher authority" (REQUIRED)
+
+Response (200):
+{ "success": true, "message": "Complaint escalated to Admin Officer" }
+
+SIDE EFFECTS:
+  - Reassigns complaint to next authority in escalation chain
+  - Sends notifications to student and new authority
+
+
+--- 5.9 Get Escalation History ---
+GET /api/authorities/complaints/{complaint_id}/escalation-history
+Auth: Authority token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{
+  "complaint_id": "uuid-string",
+  "escalation_count": 2,
+  "history": [
+    {
+      "level": 5,
+      "authority_name": "Dr. Rajesh Kumar",
+      "authority_type": "Warden",
+      "assigned_at": "2026-02-01T10:00:00",
+      "is_current": false
+    },
+    {
+      "level": 10,
+      "authority_name": "Deputy Warden",
+      "authority_type": "Deputy Warden",
+      "escalated_at": "2026-02-02T15:00:00",
+      "reason": "Issue requires higher authority",
+      "is_current": true
+    }
+  ]
+}
+
+
+--- 5.10 Get Authority Stats ---
+GET /api/authorities/stats
+Auth: Authority token required
+Status: 200
+
+Response (200): AuthorityStats (same as dashboard.stats)
+
+
+--- 5.11 Flag Complaint as Spam ---
+POST /api/complaints/{complaint_id}/flag-spam
+Auth: Authority token required
+Path: complaint_id (UUID)
+Query: reason (string, REQUIRED)
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Complaint flagged as spam" }
+
+
+--- 5.12 Remove Spam Flag ---
+POST /api/complaints/{complaint_id}/unflag-spam
+Auth: Authority token required
+Path: complaint_id (UUID)
+Status: 200
+
+Response (200):
+{ "success": true, "message": "Spam flag removed" }
+
+
+===============================================================================
+6. HEALTH ENDPOINTS
+===============================================================================
+
+GET /health
+Auth: None
+Status: 200
+Response: { "status": "ok", "service": "CampusVoice" }
+
+GET /health/detailed
+Auth: None
+Status: 200
+Response: { "status": "ok", "database": "connected", "environment": "development", ... }
+
+
+===============================================================================
+7. ERROR RESPONSE FORMAT
+===============================================================================
+
+All errors return this consistent JSON structure:
+
+{
+  "success": false,
+  "error": "Human-readable error message",
+  "error_code": "AUTH_002",
+  "details": { ... } | null,
+  "request_id": "uuid-string"
+}
+
+COMMON ERROR CODES:
+  AUTH_001  - Authentication error
+  AUTH_002  - Invalid credentials
+  AUTH_003  - Token expired
+  AUTH_004  - Invalid token
+  AUTH_005  - Account inactive
+  AUTHZ_001 - Unauthorized
+  AUTHZ_002 - Insufficient permissions
+  VAL_001  - Validation error
+  VAL_002  - Duplicate entry
+  RES_001  - Resource not found
+  RES_002  - Student not found
+  RES_003  - Complaint not found
+  RES_004  - Authority not found
+  BIZ_001  - Spam detected
+  BIZ_004  - Invalid status transition
+  BIZ_005  - Duplicate vote
+  FILE_001 - Invalid file type
+  FILE_002 - File too large (max 5MB)
+  HTTP_401 - Missing authorization header
+  HTTP_422 - Validation error (Pydantic)
+  INTERNAL_ERROR - Unhandled server error
+
+VALIDATION ERROR FORMAT (422):
+{
+  "success": false,
+  "error": "Validation error",
+  "error_code": "VALIDATION_ERROR",
+  "details": {
+    "validation_errors": [
+      {
+        "field": "password",
+        "message": "String should have at least 8 characters",
+        "type": "string_too_short"
+      }
+    ]
+  }
+}
+
+
+===============================================================================
+8. PAGINATION
+===============================================================================
+
+All list endpoints use consistent pagination:
+
+Query Parameters:
+  skip=0    (offset, default 0)
+  limit=20  (page size, default 20, max 100)
+
+Response includes:
+  total       - total matching records
+  page        - current page (calculated: skip/limit + 1)
+  page_size   - items per page
+  total_pages - total pages (calculated: ceil(total/limit))
+
+Exception: NotificationListResponse uses total + unread_count (no page/page_size).
+
+
+===============================================================================
+9. IMAGE HANDLING
+===============================================================================
+
+SUPPORTED FORMATS: image/jpeg, image/jpg, image/png, image/gif, image/webp
+MAX SIZE: 5 MB
+MAX DIMENSIONS: 4096 x 4096 px
+THUMBNAIL: 200x200 auto-generated
+
+UPLOAD: Use multipart/form-data with field name "file" or "image"
+  - On complaint submit: field name is "image"
+  - On separate upload: field name is "file"
+
+RETRIEVE: GET /api/complaints/{id}/image returns binary data directly
+  - Content-Type header set to actual MIME type
+  - Use ?thumbnail=true for smaller version
+
+STORAGE: Binary in PostgreSQL (not filesystem)
+
+VERIFICATION: Groq Vision API checks if image is relevant to complaint text
+  Status values: "Pending", "Verified", "Rejected"
+
+
+===============================================================================
+10. COMPLETE WORKFLOW EXAMPLE
+===============================================================================
+
+STEP 1: Register a student
+  POST /api/students/register
+  Body: { roll_no, name, email, password, gender, stay_type, department_id, year }
+  -> Save the token from response
+
+STEP 2: Submit a complaint
+  POST /api/complaints/submit
+  Headers: Authorization: Bearer <token>
+  Form: category_id=1, original_text="Water not working in hostel", visibility=Public
+  -> LLM processes text, assigns category/priority/authority
+
+STEP 3: Check public feed
+  GET /api/complaints/public-feed?skip=0&limit=20
+  Headers: Authorization: Bearer <token>
+  -> See all public complaints (filtered by stay_type/department)
+
+STEP 4: Vote on a complaint
+  POST /api/complaints/{id}/vote
+  Headers: Authorization: Bearer <token>
+  Body: { "vote_type": "Upvote" }
+
+STEP 5: Authority logs in
+  POST /api/authorities/login
+  Body: { email, password }
+  -> Save authority token
+
+STEP 6: Authority views dashboard
+  GET /api/authorities/dashboard
+  Headers: Authorization: Bearer <authority_token>
+
+STEP 7: Authority updates status
+  PUT /api/authorities/complaints/{id}/status
+  Headers: Authorization: Bearer <authority_token>
+  Body: { "status": "In Progress", "reason": "Maintenance notified" }
+
+STEP 8: Student checks notifications
+  GET /api/students/notifications
+  Headers: Authorization: Bearer <student_token>
+  -> See status_update notification
+
+STEP 9: Authority resolves complaint
+  PUT /api/authorities/complaints/{id}/status
+  Headers: Authorization: Bearer <authority_token>
+  Body: { "status": "Resolved", "reason": "Issue fixed" }
+
+STEP 10: Student views complaint timeline
+  GET /api/complaints/{id}/timeline
+  Headers: Authorization: Bearer <student_token>
+  -> Full history of all status changes with timestamps
+
+
+===============================================================================
+END OF DOCUMENT
+===============================================================================

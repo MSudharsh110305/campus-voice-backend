@@ -160,53 +160,50 @@ async def get_complaints(
     db: AsyncSession = Depends(get_db)
 ):
     """Get public complaint feed filtered by visibility rules."""
-    service = ComplaintService(db)
     from src.repositories.student_repo import StudentRepository
-    
+    from src.repositories.complaint_repo import ComplaintRepository
+    from sqlalchemy import select, func, and_, or_
+    from src.database.models import Complaint
+
     # Get student info for filtering
     student_repo = StudentRepository(db)
     student = await student_repo.get_with_department(roll_no)
-    
+
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Student not found"
         )
-    
-    # Get paginated complaints
-    complaints = await service.get_public_feed(
-        student_roll_no=roll_no,
+
+    # Get paginated complaints from repo (returns ORM objects with eager-loaded category)
+    complaint_repo = ComplaintRepository(db)
+    complaints = await complaint_repo.get_public_feed(
+        student_stay_type=student.stay_type,
+        student_department_id=student.department_id,
         skip=skip,
         limit=limit
     )
-    
-    # ✅ FIXED: Use proper count query
-    from src.repositories.complaint_repo import ComplaintRepository
-    complaint_repo = ComplaintRepository(db)
-    
+
     # Count using same visibility logic
-    from sqlalchemy import select, func, and_, or_
-    from src.database.models import Complaint
-    
     count_conditions = [
         Complaint.visibility.in_(["Public", "Department"]),
         Complaint.status != "Closed"
     ]
-    
+
     if student.stay_type == "Day Scholar":
         count_conditions.append(Complaint.category_id != 1)
-    
+
     count_conditions.append(
         or_(
             Complaint.complaint_department_id == student.department_id,
             Complaint.is_cross_department == False
         )
     )
-    
-    count_query = select(func.count()).where(and_(*count_conditions))
+
+    count_query = select(func.count()).select_from(Complaint).where(and_(*count_conditions))
     result = await db.execute(count_query)
     total = result.scalar() or 0
-    
+
     return ComplaintListResponse(
         complaints=[ComplaintResponse.model_validate(c) for c in complaints],
         total=total,
@@ -228,10 +225,41 @@ async def get_complaint(
 ):
     """
     ✅ FIXED: Get detailed complaint information with visibility check.
-    
+
     Visibility is automatically checked by the dependency.
     """
-    return ComplaintDetailResponse.model_validate(complaint)
+    # Convert status_updates ORM objects to dicts before validation
+    status_updates_dicts = None
+    if hasattr(complaint, 'status_updates') and complaint.status_updates:
+        status_updates_dicts = [
+            {
+                "old_status": su.old_status,
+                "new_status": su.new_status,
+                "reason": su.reason,
+                "updated_by": su.updated_by,
+                "updated_at": su.updated_at.isoformat() if su.updated_at else None,
+            }
+            for su in complaint.status_updates
+        ]
+
+    # Build base response from ORM, then override status_updates
+    data = ComplaintResponse.model_validate(complaint).model_dump()
+    data["status_updates"] = status_updates_dicts
+    data["comments_count"] = len(complaint.comments) if hasattr(complaint, 'comments') and complaint.comments else 0
+    data["vote_count"] = (complaint.upvotes or 0) - (complaint.downvotes or 0)
+    if hasattr(complaint, 'student') and complaint.student:
+        dept_id = getattr(complaint.student, 'department_id', None)
+        data["student_department"] = str(dept_id) if dept_id is not None else None
+        data["student_gender"] = getattr(complaint.student, 'gender', None)
+        data["student_stay_type"] = getattr(complaint.student, 'stay_type', None)
+        data["student_year"] = getattr(complaint.student, 'year', None)
+    data["complaint_department_id"] = complaint.complaint_department_id
+    data["is_cross_department"] = getattr(complaint, 'is_cross_department', False)
+    data["image_filename"] = complaint.image_filename
+    data["image_size"] = complaint.image_size
+    data["image_mimetype"] = complaint.image_mimetype
+
+    return ComplaintDetailResponse(**data)
 
 
 # ==================== VOTING ====================
@@ -540,10 +568,13 @@ async def get_status_history(
     from sqlalchemy import select
     from src.database.models import Complaint
     
-    # Reload complaint with status_updates relationship
+    # Reload complaint with status_updates and their authorities
+    from src.database.models import StatusUpdate
     query = (
         select(Complaint)
-        .options(selectinload(Complaint.status_updates))
+        .options(
+            selectinload(Complaint.status_updates).selectinload(StatusUpdate.updated_by_authority)
+        )
         .where(Complaint.id == complaint_id)
     )
     result = await db.execute(query)

@@ -460,12 +460,16 @@ async def get_notifications(
         unread_only=unread_only
     )
     
+    # Get unread count
+    unread_count = await notification_repo.count_unread(
+        recipient_type="Student",
+        recipient_id=roll_no
+    )
+
     return NotificationListResponse(
         notifications=[NotificationResponse.model_validate(n) for n in notifications],
         total=total,
-        page=skip // limit + 1,
-        page_size=limit,
-        total_pages=(total + limit - 1) // limit
+        unread_count=unread_count
     )
 
 

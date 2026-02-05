@@ -275,8 +275,8 @@ async def get_authority_dashboard(
     return AuthorityDashboard(
         profile=AuthorityProfile.model_validate(authority),
         stats=AuthorityStats(**stats),
-        recent_complaints=[ComplaintResponse.model_validate(c) for c in recent],
-        urgent_complaints=[ComplaintResponse.model_validate(c) for c in urgent],
+        recent_complaints=[ComplaintResponse.model_validate(c).model_dump() for c in recent],
+        urgent_complaints=[ComplaintResponse.model_validate(c).model_dump() for c in urgent],
         unread_notifications=unread_count
     )
 

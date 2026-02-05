@@ -86,7 +86,7 @@ class Student(Base):
     password_hash = Column(String(255), nullable=False)
     gender = Column(String(10), nullable=False)
     stay_type = Column(String(20), nullable=False)
-    year = Column(String(20), nullable=False, index=True)
+    year = Column(Integer, nullable=False, index=True)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     email_verified = Column(Boolean, default=False, nullable=False)
@@ -103,7 +103,7 @@ class Student(Base):
     __table_args__ = (
         CheckConstraint("gender IN ('Male', 'Female', 'Other')", name="check_gender"),
         CheckConstraint("stay_type IN ('Hostel', 'Day Scholar')", name="check_stay_type"),
-        CheckConstraint("year IN ('1st Year', '2nd Year', '3rd Year', '4th Year')", name="check_year"),
+        CheckConstraint("year >= 1 AND year <= 10", name="check_year"),
         Index("idx_student_dept_year_stay", "department_id", "year", "stay_type"),
         Index("idx_student_year_stay", "year", "stay_type", "is_active"),
         Index("idx_student_active", "is_active"),

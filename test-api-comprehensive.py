@@ -185,13 +185,13 @@ def main() -> None:
     for i, student_data in enumerate(students, start=1):
         try:
             r = requests.post(
-                f"{BASE}/students/register",
+                f"{BASE}/api/students/register",
                 json=student_data,
                 timeout=15,
             )
             body = print_response(
                 "POST",
-                "/students/register",
+                "/api/students/register",
                 r,
                 label=f"Register Student {i} ({student_data['roll_no']})",
             )
@@ -219,7 +219,7 @@ def main() -> None:
     for roll_no, password in login_cases:
         try:
             r = requests.post(
-                f"{BASE}/students/login",
+                f"{BASE}/api/students/login",
                 json={
                     "email_or_roll_no": roll_no,
                     "password": password,
@@ -228,7 +228,7 @@ def main() -> None:
             )
             body = print_response(
                 "POST",
-                "/students/login",
+                "/api/students/login",
                 r,
                 label=f"Login Student ({roll_no})",
             )
@@ -244,7 +244,7 @@ def main() -> None:
     # Invalid login attempt
     try:
         r = requests.post(
-            f"{BASE}/students/login",
+            f"{BASE}/api/students/login",
             json={
                 "email_or_roll_no": "23CS001",
                 "password": "WrongPassword1!",
@@ -253,7 +253,7 @@ def main() -> None:
         )
         print_response(
             "POST",
-            "/students/login",
+            "/api/students/login",
             r,
             label="Invalid Login (wrong password)",
         )
@@ -272,13 +272,13 @@ def main() -> None:
     if token_s1:
         try:
             r = requests.get(
-                f"{BASE}/students/profile",
+                f"{BASE}/api/students/profile",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                "/students/profile",
+                "/api/students/profile",
                 r,
                 label="Profile for Student 1 (23CS001)",
             )
@@ -350,6 +350,7 @@ def main() -> None:
                 ),
                 "visibility": "Public",
             },
+            "include_image": True,
         },
         {
             "student": "23CS050",
@@ -391,15 +392,31 @@ def main() -> None:
             complaint_ids.append(None)
             continue
         try:
+            files_param = None
+            if spec.get("include_image"):
+                try:
+                    from PIL import Image, ImageDraw
+                    img = Image.new("RGB", (200, 200), color=(180, 60, 60))
+                    draw = ImageDraw.Draw(img)
+                    draw.line([(20, 20), (100, 100), (80, 180)], fill=(50, 50, 50), width=3)
+                    draw.line([(100, 100), (180, 60)], fill=(50, 50, 50), width=2)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG")
+                    buf.seek(0)
+                    files_param = {"image": ("wall_crack.jpg", buf, "image/jpeg")}
+                except ImportError:
+                    print("  WARNING: Pillow not installed, submitting without image")
+
             r = requests.post(
-                f"{BASE}/complaints/submit",
+                f"{BASE}/api/complaints/submit",
                 data=spec["fields"],
+                files=files_param,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
             body = print_response(
                 "POST",
-                "/complaints/submit",
+                "/api/complaints/submit",
                 r,
                 label=spec["label"],
             )
@@ -447,14 +464,14 @@ def main() -> None:
             buf.seek(0)
 
             r = requests.post(
-                f"{BASE}/complaints/{complaint_4_id}/upload-image",
+                f"{BASE}/api/complaints/{complaint_4_id}/upload-image",
                 files={"file": ("wall_crack.jpg", buf, "image/jpeg")},
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=30,
             )
             print_response(
                 "POST",
-                f"/complaints/{complaint_4_id}/upload-image",
+                f"/api/complaints/{complaint_4_id}/upload-image",
                 r,
                 label="Upload image for Complaint 4",
             )
@@ -489,13 +506,13 @@ def main() -> None:
     if token_s1:
         try:
             r = requests.get(
-                f"{BASE}/complaints/public-feed",
+                f"{BASE}/api/complaints/public-feed",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                "/complaints/public-feed",
+                "/api/complaints/public-feed",
                 r,
                 label=(
                     "Public Feed as Student 1 "
@@ -514,13 +531,13 @@ def main() -> None:
     if token_s2:
         try:
             r = requests.get(
-                f"{BASE}/complaints/public-feed",
+                f"{BASE}/api/complaints/public-feed",
                 headers={"Authorization": f"Bearer {token_s2}"},
                 timeout=10,
             )
             body = print_response(
                 "GET",
-                "/complaints/public-feed",
+                "/api/complaints/public-feed",
                 r,
                 label=(
                     "Public Feed as Student 2 "
@@ -555,7 +572,7 @@ def main() -> None:
     if vote_target and student_tokens.get("22EC045"):
         try:
             r = requests.post(
-                f"{BASE}/complaints/{vote_target}/vote",
+                f"{BASE}/api/complaints/{vote_target}/vote",
                 json={"vote_type": "Upvote"},
                 headers={
                     "Authorization":
@@ -565,7 +582,7 @@ def main() -> None:
             )
             print_response(
                 "POST",
-                f"/complaints/{vote_target}/vote",
+                f"/api/complaints/{vote_target}/vote",
                 r,
                 label="Student 2 upvotes Complaint 1",
             )
@@ -580,7 +597,7 @@ def main() -> None:
     if vote_target and student_tokens.get("24ME012"):
         try:
             r = requests.post(
-                f"{BASE}/complaints/{vote_target}/vote",
+                f"{BASE}/api/complaints/{vote_target}/vote",
                 json={"vote_type": "Upvote"},
                 headers={
                     "Authorization":
@@ -590,7 +607,7 @@ def main() -> None:
             )
             print_response(
                 "POST",
-                f"/complaints/{vote_target}/vote",
+                f"/api/complaints/{vote_target}/vote",
                 r,
                 label="Student 3 upvotes Complaint 1",
             )
@@ -605,7 +622,7 @@ def main() -> None:
     if vote_target_3 and student_tokens.get("23CS050"):
         try:
             r = requests.post(
-                f"{BASE}/complaints/{vote_target_3}/vote",
+                f"{BASE}/api/complaints/{vote_target_3}/vote",
                 json={"vote_type": "Downvote"},
                 headers={
                     "Authorization":
@@ -615,7 +632,7 @@ def main() -> None:
             )
             print_response(
                 "POST",
-                f"/complaints/{vote_target_3}/vote",
+                f"/api/complaints/{vote_target_3}/vote",
                 r,
                 label="Student 4 downvotes Complaint 3",
             )
@@ -630,7 +647,7 @@ def main() -> None:
     if vote_target and student_tokens.get("22EC045"):
         try:
             r = requests.get(
-                f"{BASE}/complaints/{vote_target}/my-vote",
+                f"{BASE}/api/complaints/{vote_target}/my-vote",
                 headers={
                     "Authorization":
                         f"Bearer {student_tokens['22EC045']}"
@@ -639,7 +656,7 @@ def main() -> None:
             )
             print_response(
                 "GET",
-                f"/complaints/{vote_target}/my-vote",
+                f"/api/complaints/{vote_target}/my-vote",
                 r,
                 label="Check Student 2 vote on Complaint 1",
             )
@@ -654,7 +671,7 @@ def main() -> None:
     if vote_target and student_tokens.get("22EC045"):
         try:
             r = requests.delete(
-                f"{BASE}/complaints/{vote_target}/vote",
+                f"{BASE}/api/complaints/{vote_target}/vote",
                 headers={
                     "Authorization":
                         f"Bearer {student_tokens['22EC045']}"
@@ -663,7 +680,7 @@ def main() -> None:
             )
             print_response(
                 "DELETE",
-                f"/complaints/{vote_target}/vote",
+                f"/api/complaints/{vote_target}/vote",
                 r,
                 label="Remove Student 2 vote on Complaint 1",
             )
@@ -678,7 +695,7 @@ def main() -> None:
     if vote_target and student_tokens.get("22EC045"):
         try:
             r = requests.get(
-                f"{BASE}/complaints/{vote_target}/my-vote",
+                f"{BASE}/api/complaints/{vote_target}/my-vote",
                 headers={
                     "Authorization":
                         f"Bearer {student_tokens['22EC045']}"
@@ -687,7 +704,7 @@ def main() -> None:
             )
             print_response(
                 "GET",
-                f"/complaints/{vote_target}/my-vote",
+                f"/api/complaints/{vote_target}/my-vote",
                 r,
                 label="Re-check Student 2 vote after removal",
             )
@@ -702,7 +719,7 @@ def main() -> None:
     if student_tokens.get("23CS001"):
         try:
             r = requests.get(
-                f"{BASE}/complaints/public-feed",
+                f"{BASE}/api/complaints/public-feed",
                 headers={
                     "Authorization":
                         f"Bearer {student_tokens['23CS001']}"
@@ -711,7 +728,7 @@ def main() -> None:
             )
             print_response(
                 "GET",
-                "/complaints/public-feed",
+                "/api/complaints/public-feed",
                 r,
                 label="Public Feed after voting (updated vote counts)",
             )
@@ -743,13 +760,13 @@ def main() -> None:
     for email, pwd in authority_emails:
         try:
             r = requests.post(
-                f"{BASE}/authorities/login",
+                f"{BASE}/api/authorities/login",
                 json={"email": email, "password": pwd},
                 timeout=10,
             )
             body = print_response(
                 "POST",
-                "/authorities/login",
+                "/api/authorities/login",
                 r,
                 label=f"Authority Login ({email})",
             )
@@ -778,13 +795,13 @@ def main() -> None:
     if authority_token:
         try:
             r = requests.get(
-                f"{BASE}/authorities/dashboard",
+                f"{BASE}/api/authorities/dashboard",
                 headers={"Authorization": f"Bearer {authority_token}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                "/authorities/dashboard",
+                "/api/authorities/dashboard",
                 r,
                 label="Authority Dashboard",
             )
@@ -799,13 +816,13 @@ def main() -> None:
     if authority_token:
         try:
             r = requests.get(
-                f"{BASE}/authorities/my-complaints",
+                f"{BASE}/api/authorities/my-complaints",
                 headers={"Authorization": f"Bearer {authority_token}"},
                 timeout=10,
             )
             body = print_response(
                 "GET",
-                "/authorities/my-complaints",
+                "/api/authorities/my-complaints",
                 r,
                 label=(
                     "Authority Assigned Complaints "
@@ -849,7 +866,7 @@ def main() -> None:
         # Change to "In Progress"
         try:
             r = requests.put(
-                f"{BASE}/authorities/complaints/"
+                f"{BASE}/api/authorities/complaints/"
                 f"{target_complaint}/status",
                 json={
                     "status": "In Progress",
@@ -863,7 +880,7 @@ def main() -> None:
             )
             print_response(
                 "PUT",
-                f"/authorities/complaints/{target_complaint}/status",
+                f"/api/authorities/complaints/{target_complaint}/status",
                 r,
                 label="Change Complaint 1 status to 'In Progress'",
             )
@@ -877,7 +894,7 @@ def main() -> None:
         # Post an update
         try:
             r = requests.post(
-                f"{BASE}/authorities/complaints/"
+                f"{BASE}/api/authorities/complaints/"
                 f"{target_complaint}/post-update",
                 params={
                     "title": "Plumber dispatched",
@@ -892,7 +909,7 @@ def main() -> None:
             )
             print_response(
                 "POST",
-                f"/authorities/complaints/"
+                f"/api/authorities/complaints/"
                 f"{target_complaint}/post-update",
                 r,
                 label="Post authority update on Complaint 1",
@@ -907,7 +924,7 @@ def main() -> None:
         # Change to "Resolved"
         try:
             r = requests.put(
-                f"{BASE}/authorities/complaints/"
+                f"{BASE}/api/authorities/complaints/"
                 f"{target_complaint}/status",
                 json={
                     "status": "Resolved",
@@ -920,7 +937,7 @@ def main() -> None:
             )
             print_response(
                 "PUT",
-                f"/authorities/complaints/{target_complaint}/status",
+                f"/api/authorities/complaints/{target_complaint}/status",
                 r,
                 label="Change Complaint 1 status to 'Resolved'",
             )
@@ -935,14 +952,14 @@ def main() -> None:
         token_viewer = student_tokens.get("23CS001") or authority_token
         try:
             r = requests.get(
-                f"{BASE}/complaints/"
+                f"{BASE}/api/complaints/"
                 f"{target_complaint}/status-history",
                 headers={"Authorization": f"Bearer {token_viewer}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                f"/complaints/{target_complaint}/status-history",
+                f"/api/complaints/{target_complaint}/status-history",
                 r,
                 label="Status History for Complaint 1",
             )
@@ -956,13 +973,13 @@ def main() -> None:
         # View timeline
         try:
             r = requests.get(
-                f"{BASE}/complaints/{target_complaint}/timeline",
+                f"{BASE}/api/complaints/{target_complaint}/timeline",
                 headers={"Authorization": f"Bearer {token_viewer}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                f"/complaints/{target_complaint}/timeline",
+                f"/api/complaints/{target_complaint}/timeline",
                 r,
                 label="Complaint 1 Timeline",
             )
@@ -987,13 +1004,13 @@ def main() -> None:
         # Unread count
         try:
             r = requests.get(
-                f"{BASE}/students/notifications/unread-count",
+                f"{BASE}/api/students/notifications/unread-count",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                "/students/notifications/unread-count",
+                "/api/students/notifications/unread-count",
                 r,
                 label="Unread notification count for Student 1",
             )
@@ -1007,13 +1024,13 @@ def main() -> None:
         # Get notifications
         try:
             r = requests.get(
-                f"{BASE}/students/notifications",
+                f"{BASE}/api/students/notifications",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             body = print_response(
                 "GET",
-                "/students/notifications",
+                "/api/students/notifications",
                 r,
                 label="Notifications for Student 1",
             )
@@ -1037,13 +1054,13 @@ def main() -> None:
             try:
                 nid = notification_ids[0]
                 r = requests.put(
-                    f"{BASE}/students/notifications/{nid}/read",
+                    f"{BASE}/api/students/notifications/{nid}/read",
                     headers={"Authorization": f"Bearer {token_s1}"},
                     timeout=10,
                 )
                 print_response(
                     "PUT",
-                    f"/students/notifications/{nid}/read",
+                    f"/api/students/notifications/{nid}/read",
                     r,
                     label=f"Mark notification {nid} as read",
                 )
@@ -1057,13 +1074,13 @@ def main() -> None:
         # Re-check unread count
         try:
             r = requests.get(
-                f"{BASE}/students/notifications/unread-count",
+                f"{BASE}/api/students/notifications/unread-count",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                "/students/notifications/unread-count",
+                "/api/students/notifications/unread-count",
                 r,
                 label="Unread count after marking one as read",
             )
@@ -1085,13 +1102,13 @@ def main() -> None:
     if token_s1:
         try:
             r = requests.get(
-                f"{BASE}/students/my-complaints",
+                f"{BASE}/api/students/my-complaints",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             body = print_response(
                 "GET",
-                "/students/my-complaints",
+                "/api/students/my-complaints",
                 r,
                 label="Student 1 (23CS001) - My Complaints",
             )
@@ -1130,13 +1147,13 @@ def main() -> None:
     if target_complaint and token_s1:
         try:
             r = requests.get(
-                f"{BASE}/complaints/{target_complaint}",
+                f"{BASE}/api/complaints/{target_complaint}",
                 headers={"Authorization": f"Bearer {token_s1}"},
                 timeout=10,
             )
             print_response(
                 "GET",
-                f"/complaints/{target_complaint}",
+                f"/api/complaints/{target_complaint}",
                 r,
                 label="Full details for Complaint 1",
             )
