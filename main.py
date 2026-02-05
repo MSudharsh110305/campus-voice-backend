@@ -2,45 +2,54 @@
 CampusVoice - Campus Complaint Management System
 Main application entry point.
 
-FastAPI application with async support, middleware, and comprehensive error handling.
-
-✅ FIXED: Import from src.database.connection
-✅ FIXED: Proper lifespan integration
+Uses the production-ready app from src/api/__init__.py with proper
+architecture: route -> service -> repository pattern, LLM integration,
+database initialization via lifespan, and middleware stack.
 """
 
 import sys
 import uvicorn
 from pathlib import Path
 
-# Add src to path
+# Ensure project root is on sys.path so 'src' is importable
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config.settings import settings
 from src.utils.logger import app_logger
-# Import the FastAPI app from the in-memory test app (test_main.py)
-from test_main import app
+from src.api import create_app
+
+# Create the production FastAPI application
+app = create_app()
 
 
 def main():
     """
     Main function to run the application.
+
+    The app created by create_app() includes:
+    - Lifespan handler that initializes DB tables and seeds data on startup
+    - All middleware (CORS, auth, rate limiting, logging)
+    - All API routes (students, complaints, authorities, admin, health)
+    - Global exception handlers
     """
     app_logger.info("=" * 60)
-    app_logger.info("🎓 CampusVoice - Campus Complaint Management System")
+    app_logger.info("CampusVoice - Campus Complaint Management System")
     app_logger.info("=" * 60)
     app_logger.info(f"Environment: {settings.ENVIRONMENT}")
     app_logger.info(f"Host: {settings.HOST}")
     app_logger.info(f"Port: {settings.PORT}")
     app_logger.info(f"Debug Mode: {settings.DEBUG}")
     app_logger.info(f"Workers: {settings.WORKERS}")
-    app_logger.info(f"Database: PostgreSQL" if "postgresql" in settings.DATABASE_URL else "SQLite")
+    app_logger.info(
+        f"Database: {'PostgreSQL' if 'postgresql' in settings.DATABASE_URL else 'Other'}"
+    )
     app_logger.info("=" * 60)
-    
+
     # Run with Uvicorn
     uvicorn.run(
-        app,  # ✅ Correct: uses lifespan from src.api.__init__.py
-        host="0.0.0.0",
-        port=8000,
+        app,
+        host=settings.HOST,
+        port=settings.PORT,
         log_level="info",
         access_log=True,
         use_colors=True,

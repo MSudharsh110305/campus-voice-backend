@@ -493,6 +493,42 @@ class NotificationService:
             message=message
         )
     
+    async def create_status_change_notification(
+        self,
+        db: AsyncSession,
+        complaint_id: UUID,
+        student_roll_no: str,
+        old_status: str,
+        new_status: str
+    ) -> Notification:
+        """
+        Create a notification for a complaint status change.
+
+        Called by the authority status update endpoint.
+
+        Args:
+            db: Database session
+            complaint_id: Complaint UUID
+            student_roll_no: Student roll number
+            old_status: Previous status
+            new_status: New status
+
+        Returns:
+            Created notification
+        """
+        message = (
+            f"Your complaint status changed from '{old_status}' to '{new_status}'"
+        )
+
+        return await self.create_notification(
+            db=db,
+            recipient_type="Student",
+            recipient_id=student_roll_no,
+            complaint_id=complaint_id,
+            notification_type="status_update",
+            message=message
+        )
+
     async def notify_vote_milestone(
         self,
         db: AsyncSession,
