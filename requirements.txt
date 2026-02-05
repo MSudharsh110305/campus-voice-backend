@@ -58,3 +58,6 @@ slowapi==0.1.9
 
 # Optional: CORS (already in FastAPI)
 # fastapi already includes CORS middleware
+
+# Streamlit Client UI
+streamlit>=1.30.0
