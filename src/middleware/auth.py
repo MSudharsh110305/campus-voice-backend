@@ -36,6 +36,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     PUBLIC_PREFIXES = [
         "/static",
         "/uploads",
+        "/health",
+        "/ping",
+        "/metrics",
     ]
     
     async def dispatch(self, request: Request, call_next: Callable):

@@ -227,7 +227,6 @@ class ComplaintService:
             spam_reason=None,
             complaint_department_id=student.department_id,
             # ✅ NEW: Binary image fields
-            has_image=image_bytes is not None,
             image_data=image_bytes,
             image_mimetype=image_mimetype,
             image_size=image_size,
@@ -363,8 +362,7 @@ class ComplaintService:
                 image_bytes, image_mimetype
             )
             
-            # Update complaint with image
-            complaint.has_image = True
+            # Update complaint with image (has_image is a computed property based on image_data)
             complaint.image_data = image_bytes
             complaint.image_mimetype = image_mimetype
             complaint.image_size = image_size
@@ -568,7 +566,7 @@ class ComplaintService:
                 "status": complaint.status,
                 "upvotes": complaint.upvotes,
                 "downvotes": complaint.downvotes,
-                "created_at": complaint.created_at.isoformat(),
+                "created_at": complaint.submitted_at.isoformat(),
                 "visibility": complaint.visibility,
                 "is_own_complaint": complaint.student_roll_no == student_roll_no,
                 # ✅ NEW: Image fields
@@ -614,7 +612,7 @@ class ComplaintService:
             "visibility": complaint.visibility,
             "upvotes": complaint.upvotes,
             "downvotes": complaint.downvotes,
-            "created_at": complaint.created_at.isoformat(),
+            "created_at": complaint.submitted_at.isoformat(),
             "updated_at": complaint.updated_at.isoformat() if complaint.updated_at else None,
             "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
             "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else None,
@@ -657,7 +655,7 @@ class ComplaintService:
                 "category": complaint.category.name if complaint.category else "Unknown",
                 "status": complaint.status,
                 "priority": complaint.priority,
-                "created_at": complaint.created_at.isoformat(),
+                "created_at": complaint.submitted_at.isoformat(),
                 "updated_at": complaint.updated_at.isoformat() if complaint.updated_at else None,
                 "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
                 "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else "Unassigned",
@@ -793,7 +791,7 @@ class ComplaintService:
             "visibility": complaint.visibility,
             "upvotes": complaint.upvotes,
             "downvotes": complaint.downvotes,
-            "created_at": complaint.created_at.isoformat(),
+            "created_at": complaint.submitted_at.isoformat(),
             "updated_at": complaint.updated_at.isoformat() if complaint.updated_at else None,
             "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
             "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else None,

@@ -5,7 +5,7 @@ Notification repository with specialized queries.
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, and_, update, delete
+from sqlalchemy import select, and_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Notification
 from src.repositories.base import BaseRepository
@@ -150,6 +150,26 @@ class NotificationRepository(BaseRepository[Notification]):
         await self.session.commit()
         return result.rowcount
     
+    async def count_by_recipient(
+        self,
+        recipient_type: str,
+        recipient_id: str,
+        unread_only: bool = False
+    ) -> int:
+        """
+        Count notifications for a recipient.
+        """
+        conditions = [
+            Notification.recipient_type == recipient_type,
+            Notification.recipient_id == recipient_id
+        ]
+        if unread_only:
+            conditions.append(Notification.is_read == False)
+
+        query = select(func.count(Notification.id)).where(and_(*conditions))
+        result = await self.session.execute(query)
+        return result.scalar() or 0
+
     async def delete_old_notifications(
         self,
         days: int = 30

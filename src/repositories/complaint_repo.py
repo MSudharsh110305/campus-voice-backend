@@ -127,7 +127,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 selectinload(Complaint.assigned_authority),
                 selectinload(Complaint.complaint_department),
                 selectinload(Complaint.comments),
-                selectinload(Complaint.image_verification_logs)  # ✅ ADDED
+                selectinload(Complaint.status_updates),
+                selectinload(Complaint.image_verification_logs)
             )
             .where(Complaint.id == complaint_id)
         )
@@ -316,9 +317,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 Complaint.is_cross_department == False
             )
         )
-        
+
         query = (
             select(Complaint)
+            .options(selectinload(Complaint.category))
             .where(and_(*conditions))
             .order_by(desc(Complaint.priority_score))
             .offset(skip)
@@ -326,7 +328,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         )
         result = await self.session.execute(query)
         return result.scalars().all()
-    
+
     async def get_high_priority(self, limit: int = 50) -> List[Complaint]:
         """
         Get high priority complaints.
@@ -660,6 +662,22 @@ class ComplaintRepository(BaseRepository[Complaint]):
         result = await self.session.execute(query)
         return dict(result.all())
     
+    async def count_by_student(
+        self,
+        student_roll_no: str,
+        status: Optional[str] = None
+    ) -> int:
+        """
+        Count complaints by student, optionally filtered by status.
+        """
+        conditions = [Complaint.student_roll_no == student_roll_no]
+        if status:
+            conditions.append(Complaint.status == status)
+
+        query = select(func.count(Complaint.id)).where(and_(*conditions))
+        result = await self.session.execute(query)
+        return result.scalar() or 0
+
     async def get_pending_for_escalation(
         self,
         hours: int = 48
