@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     PASSWORD_MIN_LENGTH: int = Field(default=8, ge=6, description="Min password length")
     
     # ==================== GROQ LLM ====================
-    GROQ_API_KEY: str = Field(..., description="Groq API key")
+    GROQ_API_KEY: str = Field(default="", description="Groq API key (optional; LLM features use fallback logic when empty)")
     LLM_MODEL: str = Field(default="llama-3.1-8b-instant", description="Primary LLM model")
     LLM_FALLBACK_MODEL: Optional[str] = Field(
         default="mixtral-8x7b-32768",

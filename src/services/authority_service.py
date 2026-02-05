@@ -130,6 +130,54 @@ class AuthorityService:
         logger.error("Fallback routing failed - no authorities available")
         return None
     
+    async def get_escalation_authority(
+        self,
+        db: AsyncSession,
+        category_id: int,
+        current_level: int,
+        department_id: Optional[int] = None
+    ) -> Optional[Authority]:
+        """
+        Find a higher-level authority for escalation based on category and level.
+
+        Used by the escalation endpoint to find the next authority in the chain.
+
+        Args:
+            db: Database session
+            category_id: Complaint category ID
+            current_level: Current authority's level
+            department_id: Optional department ID for scoping
+
+        Returns:
+            Higher authority or None
+        """
+        authority_repo = AuthorityRepository(db)
+
+        # Get current authority type from level
+        from src.config.constants import LEVEL_TO_AUTHORITY
+        current_type = LEVEL_TO_AUTHORITY.get(current_level)
+
+        if current_type:
+            next_type = ESCALATION_RULES.get(current_type)
+            if next_type and next_type != current_type:
+                authorities = await authority_repo.get_by_type(next_type)
+                if authorities:
+                    # Prefer same department if applicable
+                    if department_id:
+                        dept_authorities = [
+                            a for a in authorities if a.department_id == department_id
+                        ]
+                        if dept_authorities:
+                            return dept_authorities[0]
+                    return authorities[0]
+
+        # Fallback: find any authority with a higher level
+        higher_authority = await authority_repo.get_higher_authority(
+            current_level=current_level,
+            department_id=department_id
+        )
+        return higher_authority
+
     async def get_escalated_authority(
         self,
         db: AsyncSession,

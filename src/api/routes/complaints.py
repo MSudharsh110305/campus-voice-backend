@@ -478,27 +478,36 @@ async def verify_complaint_image(
     # Check if already verified
     if complaint.image_verified:
         return ImageUploadResponse(
-            image_url=None,
-            verified=True,
+            complaint_id=str(complaint_id),
+            has_image=True,
+            image_verified=True,
             verification_status=complaint.image_verification_status,
-            message="Image already verified"
+            verification_message="Image already verified"
         )
-    
+
     try:
-        # Trigger verification
-        result = await image_verification_service.verify_image(
+        # Trigger verification using binary image data from the complaint
+        result = await image_verification_service.verify_image_from_bytes(
+            db=db,
             complaint_id=complaint_id,
             complaint_text=complaint.rephrased_text or complaint.original_text,
-            category_name=complaint.category.name if complaint.category else "General"
+            image_bytes=complaint.image_data,
+            mimetype=complaint.image_mimetype or "image/jpeg"
         )
-        
+
+        # Update complaint with verification results
+        complaint.image_verified = result["is_relevant"]
+        complaint.image_verification_status = result["status"]
+        await db.commit()
+
         return ImageUploadResponse(
-            image_url=None,
-            verified=result["is_relevant"],
-            verification_status=result["verification_status"],
-            message=result.get("message", "Image verification complete")
+            complaint_id=str(complaint_id),
+            has_image=True,
+            image_verified=result["is_relevant"],
+            verification_status=result["status"],
+            verification_message=result.get("explanation", "Image verification complete")
         )
-        
+
     except Exception as e:
         logger.error(f"Image verification error: {e}", exc_info=True)
         raise HTTPException(

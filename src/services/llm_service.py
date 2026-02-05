@@ -25,15 +25,29 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     """Service for LLM operations using Groq API"""
-    
+
     def __init__(self):
-        """Initialize LLM service with Groq client"""
-        self.groq_client = Groq(api_key=settings.GROQ_API_KEY)
+        """Initialize LLM service with Groq client.
+
+        Gracefully handles missing GROQ_API_KEY by setting client to None.
+        All LLM methods fall back to keyword-based logic when the client
+        is unavailable.
+        """
+        self.groq_client = None
         self.model = settings.LLM_MODEL
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
         self.timeout = settings.LLM_TIMEOUT
-        logger.info(f"LLM Service initialized with model: {self.model}")
+
+        api_key = settings.GROQ_API_KEY
+        if api_key and api_key.strip():
+            try:
+                self.groq_client = Groq(api_key=api_key)
+                logger.info(f"LLM Service initialized with model: {self.model}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Groq client: {e}. LLM features will use fallback logic.")
+        else:
+            logger.warning("GROQ_API_KEY is not set. LLM features will use keyword-based fallback logic.")
     
     # ==================== CATEGORIZATION ====================
     
@@ -60,9 +74,13 @@ class LLMService:
         if not text or len(text.strip()) < MIN_COMPLAINT_LENGTH:
             logger.warning("Text too short for categorization")
             return self._fallback_categorization(text)
-        
+
+        if not self.groq_client:
+            logger.info("Groq client unavailable, using fallback categorization")
+            return self._fallback_categorization(text)
+
         prompt = self._build_categorization_prompt(text, context)
-        
+
         try:
             # ✅ FIXED: Use timezone-aware datetime
             start_time = datetime.now(timezone.utc)
@@ -273,7 +291,11 @@ JSON Response:"""
         if not text or len(text.strip()) < 10:
             logger.warning("Text too short for rephrasing, returning original")
             return text
-        
+
+        if not self.groq_client:
+            logger.info("Groq client unavailable, skipping rephrasing")
+            return text
+
         prompt = self._build_rephrasing_prompt(text)
         
         try:
@@ -357,8 +379,16 @@ Provide ONLY the rephrased complaint text (no explanations, no labels):"""
                 "reason": "Appears to be test/dummy content"
             }
         
+        if not self.groq_client:
+            logger.info("Groq client unavailable, skipping LLM spam detection (assuming not spam)")
+            return {
+                "is_spam": False,
+                "confidence": 0.5,
+                "reason": "LLM unavailable, skipping spam detection"
+            }
+
         prompt = self._build_spam_detection_prompt(text)
-        
+
         try:
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
@@ -513,6 +543,10 @@ JSON Response:"""
                 "confidence": 0.5
             }
 
+        if not self.groq_client:
+            logger.info("Groq client unavailable, using fallback image requirement check")
+            return self._fallback_image_requirement(complaint_text)
+
         prompt = self._build_image_requirement_prompt(complaint_text, category)
 
         try:
@@ -626,20 +660,27 @@ JSON Response:"""
             "max_tokens": self.max_tokens,
             "timeout": self.timeout,
             "max_retries": settings.LLM_MAX_RETRIES,
-            "status": "operational"
+            "status": "operational" if self.groq_client else "fallback_mode"
         }
     
     async def test_connection(self) -> Dict[str, Any]:
         """
         Test Groq API connection.
-        
+
         Returns:
             Connection test result
         """
+        if not self.groq_client:
+            return {
+                "status": "unavailable",
+                "model": self.model,
+                "message": "Groq client not initialized (API key missing or invalid)"
+            }
+
         try:
-            # ✅ Use timezone-aware datetime
+            # Use timezone-aware datetime
             start_time = datetime.now(timezone.utc)
-            
+
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
                 model=self.model,

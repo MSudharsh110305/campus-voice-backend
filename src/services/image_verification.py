@@ -23,14 +23,29 @@ logger = logging.getLogger(__name__)
 
 class ImageVerificationService:
     """Service for image verification using Groq Vision API"""
-    
+
     def __init__(self):
-        """Initialize with Groq client"""
-        self.groq_client = Groq(api_key=settings.GROQ_API_KEY)
-        # ✅ Use latest Llama 4 Scout vision model (2026)
+        """Initialize with Groq client.
+
+        Gracefully handles missing GROQ_API_KEY by setting client to None.
+        Verification falls back to keyword matching when the client is
+        unavailable.
+        """
+        self.groq_client = None
+        # Use latest Llama 4 Scout vision model (2026)
         self.vision_model = "meta-llama/llama-4-scout-17b-16e-instruct"
         self.temperature = 0.2  # Lower for consistent results
         self.max_tokens = 1000
+
+        api_key = settings.GROQ_API_KEY
+        if api_key and api_key.strip():
+            try:
+                self.groq_client = Groq(api_key=api_key)
+                logger.info("Image verification service initialized with Groq Vision API")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Groq client for image verification: {e}")
+        else:
+            logger.warning("GROQ_API_KEY not set. Image verification will use fallback logic.")
     
     async def verify_image_from_bytes(
         self,
@@ -137,10 +152,15 @@ class ImageVerificationService:
             if not image_data_uri.startswith("data:"):
                 logger.error(f"Invalid data URI format: {image_data_uri[:50]}...")
                 return self._fallback_verification(complaint_text, image_description)
-            
+
+            # If Groq client is not available, use fallback
+            if not self.groq_client:
+                logger.info("Groq client unavailable, using fallback image verification")
+                return self._fallback_verification(complaint_text, image_description)
+
             # Build verification prompt
             prompt = self._build_verification_prompt(complaint_text, image_description)
-            
+
             # Call Groq Vision API
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
