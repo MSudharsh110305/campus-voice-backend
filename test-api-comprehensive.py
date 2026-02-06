@@ -143,7 +143,7 @@ def main() -> None:
         {
             "roll_no": "23CS001",
             "name": "Arjun Kumar",
-            "email": "arjun.kumar@college.edu",
+            "email": "arjun.kumar@srec.ac.in",
             "password": "SecurePass1!",
             "gender": "Male",
             "stay_type": "Hostel",
@@ -153,7 +153,7 @@ def main() -> None:
         {
             "roll_no": "22EC045",
             "name": "Priya Sharma",
-            "email": "priya.sharma@college.edu",
+            "email": "priya.sharma@srec.ac.in",
             "password": "SecurePass2!",
             "gender": "Female",
             "stay_type": "Day Scholar",
@@ -163,7 +163,7 @@ def main() -> None:
         {
             "roll_no": "24ME012",
             "name": "Rahul Verma",
-            "email": "rahul.verma@college.edu",
+            "email": "rahul.verma@srec.ac.in",
             "password": "SecurePass3!",
             "gender": "Male",
             "stay_type": "Hostel",
@@ -173,7 +173,7 @@ def main() -> None:
         {
             "roll_no": "23CS050",
             "name": "Deepa Nair",
-            "email": "deepa.nair@college.edu",
+            "email": "deepa.nair@srec.ac.in",
             "password": "SecurePass4!",
             "gender": "Female",
             "stay_type": "Hostel",
@@ -744,17 +744,16 @@ def main() -> None:
     # ==================================================================
     print_header("i. AUTHORITY LOGIN & DASHBOARD")
 
-    # Try several common authority credentials that may be seeded on startup
+    # Try SREC authority credentials seeded on startup
     authority_emails = [
-        ("warden@college.edu", "SecurePass123!"),
-        ("warden@campusvoice.edu", "SecurePass123!"),
-        ("admin@college.edu", "SecurePass123!"),
-        ("admin@campusvoice.edu", "SecurePass123!"),
-        ("admin.officer@college.edu", "SecurePass123!"),
-        ("hostel.warden@college.edu", "SecurePass123!"),
-        ("warden@college.edu", "Warden@123"),
-        ("admin@campusvoice.edu", "Admin@123"),
-        ("adminofficer@college.edu", "AdminOfficer@123"),
+        ("admin@srec.ac.in", "Admin@123456"),
+        ("officer@srec.ac.in", "Officer@1234"),
+        ("warden1.mens@srec.ac.in", "MensW1@1234"),
+        ("warden1.womens@srec.ac.in", "WomensW1@123"),
+        ("dw.mens@srec.ac.in", "MensDW@1234"),
+        ("sdw@srec.ac.in", "SeniorDW@123"),
+        ("hod.cse@srec.ac.in", "HodCSE@123"),
+        ("dc@srec.ac.in", "Discip@12345"),
     ]
 
     for email, pwd in authority_emails:

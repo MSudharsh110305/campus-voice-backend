@@ -267,7 +267,7 @@ async def seed_initial_data(session: AsyncSession):
 
 
 async def seed_authorities(session: AsyncSession):
-    """Seed default authority accounts for testing."""
+    """Seed default authority accounts for SREC college."""
     from src.database.models import Authority
     from src.services.auth_service import auth_service
 
@@ -278,53 +278,140 @@ async def seed_authorities(session: AsyncSession):
             logger.info(f"✅ Authorities already seeded ({count} found)")
             return
 
+        # Get department IDs for HOD assignments
+        dept_result = await session.execute(text("SELECT id, code FROM departments"))
+        dept_map = {row[1]: row[0] for row in dept_result.fetchall()}
+
         authorities = [
+            # System Admin
             {
                 "name": "Admin User",
-                "email": "admin@campusvoice.edu",
+                "email": "admin@srec.ac.in",
                 "password": "Admin@123456",
                 "authority_type": "Admin",
                 "authority_level": 100,
                 "designation": "System Administrator",
                 "department_id": None,
             },
-            {
-                "name": "Dr. Rajesh Kumar",
-                "email": "warden@campusvoice.edu",
-                "password": "Warden@12345",
-                "authority_type": "Warden",
-                "authority_level": 5,
-                "designation": "Chief Warden",
-                "department_id": None,
-            },
-            {
-                "name": "Dr. Priya Sharma",
-                "email": "hod.cse@campusvoice.edu",
-                "password": "HodCse@12345",
-                "authority_type": "HOD",
-                "authority_level": 8,
-                "designation": "Head of Department - CSE",
-                "department_id": 1,
-            },
+            # Administrative Officer (for General complaints)
             {
                 "name": "Mr. Suresh Reddy",
-                "email": "officer@campusvoice.edu",
+                "email": "officer@srec.ac.in",
                 "password": "Officer@1234",
                 "authority_type": "Admin Officer",
                 "authority_level": 50,
                 "designation": "Administrative Officer",
                 "department_id": None,
             },
+            # Disciplinary Committee
             {
                 "name": "Dr. Anand Verma",
-                "email": "dc@campusvoice.edu",
+                "email": "dc@srec.ac.in",
                 "password": "Discip@12345",
                 "authority_type": "Disciplinary Committee",
                 "authority_level": 20,
                 "designation": "Disciplinary Committee Chair",
                 "department_id": None,
             },
+            # Senior Deputy Warden (shared for both hostels)
+            {
+                "name": "Dr. Venkat Rao",
+                "email": "sdw@srec.ac.in",
+                "password": "SeniorDW@123",
+                "authority_type": "Senior Deputy Warden",
+                "authority_level": 15,
+                "designation": "Senior Deputy Warden",
+                "department_id": None,
+            },
+            # Men's Hostel Deputy Warden
+            {
+                "name": "Mr. Ramesh Kumar",
+                "email": "dw.mens@srec.ac.in",
+                "password": "MensDW@1234",
+                "authority_type": "Men's Hostel Deputy Warden",
+                "authority_level": 10,
+                "designation": "Deputy Warden - Men's Hostel",
+                "department_id": None,
+            },
+            # Men's Hostel Wardens (2)
+            {
+                "name": "Mr. Srinivas Reddy",
+                "email": "warden1.mens@srec.ac.in",
+                "password": "MensW1@1234",
+                "authority_type": "Men's Hostel Warden",
+                "authority_level": 5,
+                "designation": "Warden - Men's Hostel Block A",
+                "department_id": None,
+            },
+            {
+                "name": "Mr. Prakash Rao",
+                "email": "warden2.mens@srec.ac.in",
+                "password": "MensW2@1234",
+                "authority_type": "Men's Hostel Warden",
+                "authority_level": 5,
+                "designation": "Warden - Men's Hostel Block B",
+                "department_id": None,
+            },
+            # Women's Hostel Deputy Warden
+            {
+                "name": "Mrs. Lakshmi Devi",
+                "email": "dw.womens@srec.ac.in",
+                "password": "WomensDW@123",
+                "authority_type": "Women's Hostel Deputy Warden",
+                "authority_level": 10,
+                "designation": "Deputy Warden - Women's Hostel",
+                "department_id": None,
+            },
+            # Women's Hostel Wardens (2)
+            {
+                "name": "Mrs. Padma Sharma",
+                "email": "warden1.womens@srec.ac.in",
+                "password": "WomensW1@123",
+                "authority_type": "Women's Hostel Warden",
+                "authority_level": 5,
+                "designation": "Warden - Women's Hostel Block A",
+                "department_id": None,
+            },
+            {
+                "name": "Mrs. Kavitha Reddy",
+                "email": "warden2.womens@srec.ac.in",
+                "password": "WomensW2@123",
+                "authority_type": "Women's Hostel Warden",
+                "authority_level": 5,
+                "designation": "Warden - Women's Hostel Block B",
+                "department_id": None,
+            },
         ]
+
+        # HODs for all 13 departments
+        hod_data = [
+            ("CSE", "Dr. Priya Sharma", "hod.cse@srec.ac.in"),
+            ("ECE", "Dr. Suresh Babu", "hod.ece@srec.ac.in"),
+            ("MECH", "Dr. Krishna Murthy", "hod.mech@srec.ac.in"),
+            ("CIVIL", "Dr. Ravi Kumar", "hod.civil@srec.ac.in"),
+            ("EEE", "Dr. Narayana Rao", "hod.eee@srec.ac.in"),
+            ("IT", "Dr. Srikanth Reddy", "hod.it@srec.ac.in"),
+            ("BIO", "Dr. Lakshmi Prasad", "hod.bio@srec.ac.in"),
+            ("AERO", "Dr. Vijay Kumar", "hod.aero@srec.ac.in"),
+            ("RAA", "Dr. Satish Chandra", "hod.raa@srec.ac.in"),
+            ("EIE", "Dr. Ramana Reddy", "hod.eie@srec.ac.in"),
+            ("MBA", "Dr. Rajendra Prasad", "hod.mba@srec.ac.in"),
+            ("AIDS", "Dr. Kiran Kumar", "hod.aids@srec.ac.in"),
+            ("MTECH_CSE", "Dr. Srinivasa Rao", "hod.mtechcse@srec.ac.in"),
+        ]
+
+        for dept_code, name, email in hod_data:
+            dept_id = dept_map.get(dept_code)
+            if dept_id:
+                authorities.append({
+                    "name": name,
+                    "email": email,
+                    "password": f"Hod{dept_code}@123",
+                    "authority_type": "HOD",
+                    "authority_level": 8,
+                    "designation": f"Head of Department - {dept_code}",
+                    "department_id": dept_id,
+                })
 
         for auth_data in authorities:
             password = auth_data.pop("password")
@@ -338,6 +425,146 @@ async def seed_authorities(session: AsyncSession):
     except Exception as e:
         await session.rollback()
         logger.error(f"❌ Failed to seed authorities: {e}", exc_info=True)
+
+
+# ==================== SREC MIGRATION ====================
+
+async def migrate_to_srec():
+    """
+    Migrate existing database to SREC college format.
+    - Updates email domains from @college.edu or @campusvoice.edu to @srec.ac.in
+    - Updates Hostel category to Men's Hostel and adds Women's Hostel
+
+    Call this once to migrate an existing database.
+    """
+    logger.info("🔄 Starting SREC migration...")
+
+    async with AsyncSessionLocal() as session:
+        try:
+            # Update student emails from @college.edu to @srec.ac.in
+            await session.execute(
+                text("""
+                    UPDATE students
+                    SET email = REPLACE(email, '@college.edu', '@srec.ac.in')
+                    WHERE email LIKE '%@college.edu'
+                """)
+            )
+            logger.info("✅ Updated student emails")
+
+            # Update authority emails from @campusvoice.edu to @srec.ac.in
+            await session.execute(
+                text("""
+                    UPDATE authorities
+                    SET email = REPLACE(email, '@campusvoice.edu', '@srec.ac.in')
+                    WHERE email LIKE '%@campusvoice.edu'
+                """)
+            )
+            logger.info("✅ Updated authority emails")
+
+            # Check if old "Hostel" category exists
+            result = await session.execute(
+                text("SELECT id FROM complaint_categories WHERE name = 'Hostel'")
+            )
+            old_hostel_id = result.scalar()
+
+            if old_hostel_id:
+                # Rename old Hostel to Men's Hostel
+                await session.execute(
+                    text("""
+                        UPDATE complaint_categories
+                        SET name = 'Men''s Hostel',
+                            description = 'Men''s hostel facilities, cleanliness, room issues, mess complaints, amenities'
+                        WHERE name = 'Hostel'
+                    """)
+                )
+                logger.info("✅ Renamed Hostel category to Men's Hostel")
+
+                # Check if Women's Hostel already exists
+                result = await session.execute(
+                    text("SELECT id FROM complaint_categories WHERE name = 'Women''s Hostel'")
+                )
+                womens_hostel_exists = result.scalar()
+
+                if not womens_hostel_exists:
+                    # Add Women's Hostel category (using PostgreSQL ARRAY syntax)
+                    await session.execute(
+                        text("""
+                            INSERT INTO complaint_categories (name, description, keywords, is_active, created_at)
+                            VALUES (
+                                'Women''s Hostel',
+                                'Women''s hostel facilities, cleanliness, room issues, mess complaints, amenities',
+                                ARRAY['room', 'hostel', 'warden', 'bed', 'hall', 'mess', 'food', 'water', 'bathroom', 'toilet', 'shower', 'ac', 'fan', 'electricity', 'women', 'girls', 'ladies'],
+                                true,
+                                NOW()
+                            )
+                        """)
+                    )
+                    logger.info("✅ Added Women's Hostel category")
+
+            # Update old authority types to new hostel-specific types
+            await session.execute(
+                text("""
+                    UPDATE authorities
+                    SET authority_type = 'Men''s Hostel Warden'
+                    WHERE authority_type = 'Warden'
+                    AND (designation LIKE '%Men%' OR designation LIKE '%Block A%' OR designation LIKE '%Block B%')
+                """)
+            )
+
+            await session.execute(
+                text("""
+                    UPDATE authorities
+                    SET authority_type = 'Men''s Hostel Deputy Warden'
+                    WHERE authority_type = 'Deputy Warden'
+                    AND (designation LIKE '%Men%' OR department_id IS NULL)
+                """)
+            )
+
+            await session.commit()
+            logger.info("✅ SREC migration completed successfully")
+
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ SREC migration failed: {e}", exc_info=True)
+            raise
+
+
+async def update_categories_for_srec():
+    """
+    Update complaint categories for SREC.
+    Adds Men's Hostel and Women's Hostel if not present.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            from src.config.constants import CATEGORIES
+
+            for cat_data in CATEGORIES:
+                # Check if category exists
+                result = await session.execute(
+                    text("SELECT id FROM complaint_categories WHERE name = :name"),
+                    {"name": cat_data["name"]}
+                )
+                existing = result.scalar()
+
+                if not existing:
+                    await session.execute(
+                        text("""
+                            INSERT INTO complaint_categories (name, description, keywords)
+                            VALUES (:name, :description, :keywords)
+                        """),
+                        {
+                            "name": cat_data["name"],
+                            "description": cat_data["description"],
+                            "keywords": str(cat_data.get("keywords", []))
+                        }
+                    )
+                    logger.info(f"✅ Added category: {cat_data['name']}")
+
+            await session.commit()
+
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ Failed to update categories: {e}", exc_info=True)
 
 
 # ==================== DATABASE HEALTH CHECK ====================
@@ -575,6 +802,7 @@ __all__ = [
     "drop_all_tables",
     "init_db",
     "seed_initial_data",
+    "seed_authorities",
     "health_check",
     "get_db_info",
     "get_pool_status",
@@ -583,4 +811,6 @@ __all__ = [
     "execute_in_transaction",
     "execute_with_retry",
     "reset_database",
+    "migrate_to_srec",
+    "update_categories_for_srec",
 ]

@@ -48,7 +48,8 @@ DEPARTMENTS: List[Dict[str, Any]] = [
 
 class CategoryName(str, Enum):
     """Complaint category enums"""
-    HOSTEL = "Hostel"
+    MENS_HOSTEL = "Men's Hostel"
+    WOMENS_HOSTEL = "Women's Hostel"
     GENERAL = "General"
     DEPARTMENT = "Department"
     DISCIPLINARY = "Disciplinary Committee"
@@ -56,9 +57,14 @@ class CategoryName(str, Enum):
 
 CATEGORIES: List[Dict[str, Any]] = [
     {
-        "name": "Hostel",
-        "description": "Hostel facilities, cleanliness, room issues, mess complaints, amenities",
-        "keywords": ["room", "hostel", "warden", "bed", "hall", "mess", "food", "water", "bathroom", "toilet", "shower", "ac", "fan", "electricity"],
+        "name": "Men's Hostel",
+        "description": "Men's hostel facilities, cleanliness, room issues, mess complaints, amenities",
+        "keywords": ["room", "hostel", "warden", "bed", "hall", "mess", "food", "water", "bathroom", "toilet", "shower", "ac", "fan", "electricity", "men", "boys"],
+    },
+    {
+        "name": "Women's Hostel",
+        "description": "Women's hostel facilities, cleanliness, room issues, mess complaints, amenities",
+        "keywords": ["room", "hostel", "warden", "bed", "hall", "mess", "food", "water", "bathroom", "toilet", "shower", "ac", "fan", "electricity", "women", "girls", "ladies"],
     },
     {
         "name": "General",
@@ -84,8 +90,10 @@ class AuthorityType(str, Enum):
     """Authority type enums"""
     ADMIN = "Admin"
     ADMIN_OFFICER = "Admin Officer"
-    WARDEN = "Warden"
-    DEPUTY_WARDEN = "Deputy Warden"
+    MENS_HOSTEL_WARDEN = "Men's Hostel Warden"
+    WOMENS_HOSTEL_WARDEN = "Women's Hostel Warden"
+    MENS_HOSTEL_DEPUTY_WARDEN = "Men's Hostel Deputy Warden"
+    WOMENS_HOSTEL_DEPUTY_WARDEN = "Women's Hostel Deputy Warden"
     SENIOR_DEPUTY_WARDEN = "Senior Deputy Warden"
     HOD = "HOD"
     DISCIPLINARY_COMMITTEE = "Disciplinary Committee"
@@ -96,9 +104,11 @@ AUTHORITY_LEVELS: Dict[str, int] = {
     "Admin Officer": 50,
     "Disciplinary Committee": 20,
     "Senior Deputy Warden": 15,
-    "Deputy Warden": 10,
+    "Men's Hostel Deputy Warden": 10,
+    "Women's Hostel Deputy Warden": 10,
     "HOD": 8,
-    "Warden": 5,
+    "Men's Hostel Warden": 5,
+    "Women's Hostel Warden": 5,
 }
 
 LEVEL_TO_AUTHORITY: Dict[int, str] = {v: k for k, v in AUTHORITY_LEVELS.items()}
@@ -279,7 +289,8 @@ UPDATE_EXPIRY_DAYS: int = 30
 # ==================== ROUTING RULES ====================
 
 DEFAULT_CATEGORY_ROUTING: Dict[str, str] = {
-    "Hostel": "Warden",
+    "Men's Hostel": "Men's Hostel Warden",
+    "Women's Hostel": "Women's Hostel Warden",
     "General": "Admin Officer",
     "Department": "HOD",
     "Disciplinary Committee": "Disciplinary Committee",
@@ -287,11 +298,18 @@ DEFAULT_CATEGORY_ROUTING: Dict[str, str] = {
 
 CROSS_DEPARTMENT_AUTHORITY: str = "Admin Officer"
 
+# Escalation hierarchy:
+# Men's Hostel: Warden(s) -> Deputy Warden -> Senior Deputy Warden -> Admin
+# Women's Hostel: Warden(s) -> Deputy Warden -> Senior Deputy Warden -> Admin
+# Department: HOD -> Admin
+# General: Admin Officer -> Admin
 ESCALATION_RULES: Dict[str, str] = {
-    "Warden": "Deputy Warden",
-    "Deputy Warden": "Senior Deputy Warden",
-    "Senior Deputy Warden": "Admin Officer",
-    "HOD": "Admin Officer",
+    "Men's Hostel Warden": "Men's Hostel Deputy Warden",
+    "Women's Hostel Warden": "Women's Hostel Deputy Warden",
+    "Men's Hostel Deputy Warden": "Senior Deputy Warden",
+    "Women's Hostel Deputy Warden": "Senior Deputy Warden",
+    "Senior Deputy Warden": "Admin",
+    "HOD": "Admin",
     "Admin Officer": "Admin",
     "Disciplinary Committee": "Admin",
     "Admin": "Admin",
@@ -376,7 +394,8 @@ TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
 
 # ==================== REGEX PATTERNS ====================
 
-EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+# Email must end with @srec.ac.in for SREC college
+EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@srec\.ac\.in$')
 ROLL_NO_PATTERN = re.compile(r'^[0-9]{2}[A-Z_]{2,10}[0-9]{3,4}$')  # Fixed: Allow up to 10 chars for dept codes like CIVIL, MTECH_CSE
 PHONE_PATTERN = re.compile(r'^[6-9]\d{9}$')
 PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')

@@ -167,35 +167,62 @@ class AuthorityRepository(BaseRepository[Authority]):
     ) -> Optional[Authority]:
         """
         Get default authority for a category.
-        
+
         Args:
             category_name: Category name
             department_id: Optional department ID
-        
+
         Returns:
             Authority or None
         """
         # Map category to authority type
         authority_type_map = {
-            "Hostel": "Warden",
+            "Men's Hostel": "Men's Hostel Warden",
+            "Women's Hostel": "Women's Hostel Warden",
             "General": "Admin Officer",
             "Department": "HOD",
             "Disciplinary Committee": "Disciplinary Committee"
         }
-        
+
         authority_type = authority_type_map.get(category_name)
         if not authority_type:
             return None
-        
+
         conditions = [Authority.authority_type == authority_type]
-        
+
         # For department complaints, match department
         if authority_type == "HOD" and department_id:
             conditions.append(Authority.department_id == department_id)
-        
+
         query = (
             select(Authority)
             .where(and_(*conditions))
+            .limit(1)
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_higher_authority_excluding_same_level(
+        self,
+        current_level: int,
+        current_authority_type: str
+    ) -> Optional[Authority]:
+        """
+        Get next higher authority, bypassing all authorities at the same level.
+        Used when complaint is against an authority (e.g., warden complaining about warden).
+
+        Args:
+            current_level: Current authority level
+            current_authority_type: Current authority type to exclude
+
+        Returns:
+            Higher authority or None
+        """
+        # Find authorities with strictly higher level
+        query = (
+            select(Authority)
+            .where(Authority.authority_level > current_level)
+            .order_by(Authority.authority_level.asc())
             .limit(1)
         )
         result = await self.session.execute(query)

@@ -535,22 +535,23 @@ class ComplaintService:
     ) -> List[Dict[str, Any]]:
         """
         Get public feed filtered by visibility rules.
-        
+
         Args:
             student_roll_no: Student requesting feed
             skip: Number to skip
             limit: Maximum results
-        
+
         Returns:
             List of complaint dictionaries
         """
         student = await self.student_repo.get_with_department(student_roll_no)
         if not student:
             raise ValueError("Student not found")
-        
+
         complaints = await self.complaint_repo.get_public_feed(
             student_stay_type=student.stay_type,
             student_department_id=student.department_id,
+            student_gender=student.gender,
             skip=skip,
             limit=limit
         )
