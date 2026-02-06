@@ -180,18 +180,38 @@ async def get_complaints(
     complaints = await complaint_repo.get_public_feed(
         student_stay_type=student.stay_type,
         student_department_id=student.department_id,
+        student_gender=student.gender,
         skip=skip,
         limit=limit
     )
 
     # Count using same visibility logic
+    from src.database.models import ComplaintCategory
     count_conditions = [
         Complaint.visibility.in_(["Public", "Department"]),
         Complaint.status != "Closed"
     ]
 
+    # Get hostel category IDs for filtering
+    mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
+    womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
+    mens_hostel_result = await db.execute(mens_hostel_query)
+    womens_hostel_result = await db.execute(womens_hostel_query)
+    mens_hostel_id = mens_hostel_result.scalar()
+    womens_hostel_id = womens_hostel_result.scalar()
+
+    # Hide hostel complaints based on stay type and gender
     if student.stay_type == "Day Scholar":
-        count_conditions.append(Complaint.category_id != 1)
+        if mens_hostel_id:
+            count_conditions.append(Complaint.category_id != mens_hostel_id)
+        if womens_hostel_id:
+            count_conditions.append(Complaint.category_id != womens_hostel_id)
+    else:
+        # Hostel students: filter by gender
+        if student.gender == "Male" and womens_hostel_id:
+            count_conditions.append(Complaint.category_id != womens_hostel_id)
+        elif student.gender == "Female" and mens_hostel_id:
+            count_conditions.append(Complaint.category_id != mens_hostel_id)
 
     count_conditions.append(
         or_(

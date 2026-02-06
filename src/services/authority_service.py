@@ -23,73 +23,95 @@ class AuthorityService:
         db: AsyncSession,
         category_id: int,
         department_id: Optional[int],
-        is_against_authority: bool
+        is_against_authority: bool,
+        student_gender: Optional[str] = None,
+        complaint_about_authority_type: Optional[str] = None
     ) -> Optional[Authority]:
         """
         Route complaint to appropriate authority based on category and context.
-        
+
         Args:
             db: Database session
             category_id: Complaint category ID
             department_id: Student's department ID
             is_against_authority: If complaint is against an authority
-        
+            student_gender: Student's gender (for hostel routing)
+            complaint_about_authority_type: Type of authority the complaint is about
+
         Returns:
             Authority or None
         """
         authority_repo = AuthorityRepository(db)
-        
+
         # Get category name
         from src.database.models import ComplaintCategory
         category = await db.get(ComplaintCategory, category_id)
         if not category:
             logger.error(f"Category {category_id} not found for routing")
             return None
-        
+
         category_name = category.name
         logger.info(f"Routing complaint: Category={category_name}, Department={department_id}, Against Authority={is_against_authority}")
-        
+
         # Route based on category
         authority = None
-        
-        if category_name == "Hostel":
-            authority = await authority_repo.get_default_for_category("Hostel", None)
-            logger.debug(f"Hostel category: Routed to {authority.name if authority else 'None'}")
-            
+
+        if category_name == "Men's Hostel":
+            authority = await authority_repo.get_default_for_category("Men's Hostel", None)
+            logger.debug(f"Men's Hostel category: Routed to {authority.name if authority else 'None'}")
+
+        elif category_name == "Women's Hostel":
+            authority = await authority_repo.get_default_for_category("Women's Hostel", None)
+            logger.debug(f"Women's Hostel category: Routed to {authority.name if authority else 'None'}")
+
         elif category_name == "Department":
             authority = await authority_repo.get_default_for_category("Department", department_id)
             logger.debug(f"Department category: Routed to {authority.name if authority else 'None'}")
-            
+
         elif category_name == "Disciplinary Committee":
             authority = await authority_repo.get_default_for_category("Disciplinary Committee", None)
             logger.debug(f"Disciplinary category: Routed to {authority.name if authority else 'None'}")
-            
+
         else:  # General or other categories
             authority = await authority_repo.get_default_for_category("General", None)
             logger.debug(f"General/Other category: Routed to {authority.name if authority else 'None'}")
-        
+
         # If no authority found, try fallback routing
         if not authority:
             logger.warning(f"No authority found for category {category_name}, attempting fallback")
             authority = await self._fallback_routing(db, category_name, department_id)
-        
+
         # If complaint is against authority, escalate immediately
+        # For hostel complaints against a warden, bypass ALL same-level wardens
         if is_against_authority and authority:
             logger.info(f"Complaint is against authority, escalating from {authority.name}")
+
+            # Check if complaint is about a warden - bypass all wardens of same level
+            if complaint_about_authority_type and "Warden" in complaint_about_authority_type:
+                # Bypass all same-level wardens, go directly to deputy warden
+                escalated_authority = await authority_repo.get_higher_authority_excluding_same_level(
+                    authority.authority_level,
+                    authority.authority_type
+                )
+                if escalated_authority:
+                    logger.info(f"Bypassing same-level wardens, escalated to {escalated_authority.name}")
+                    return escalated_authority
+
+            # Standard escalation
             escalated_authority = await self.get_escalated_authority(db, authority.id)
-            
+
             if escalated_authority:
                 logger.info(f"Escalated to {escalated_authority.name}")
                 return escalated_authority
             else:
                 logger.warning(f"No escalation path found for {authority.name}, keeping original assignment")
                 # Keep original authority if no escalation available
-        
+
         if authority:
             logger.info(f"Complaint routed to: {authority.name} (ID: {authority.id})")
         else:
             logger.error(f"Failed to route complaint - no authority available for category {category_name}")
-        
+
         return authority
     
     async def _fallback_routing(
@@ -100,33 +122,34 @@ class AuthorityService:
     ) -> Optional[Authority]:
         """
         Fallback routing when no specific authority found.
-        
+
         Args:
             db: Database session
             category_name: Category name
             department_id: Department ID
-        
+
         Returns:
             Fallback authority or None
         """
         authority_repo = AuthorityRepository(db)
-        
+
         # Try to get any active authority of appropriate type
         fallback_types = {
-            "Hostel": ["Warden", "Chief Warden", "Dean"],
-            "Department": ["HOD", "Dean"],
-            "General": ["Admin", "Dean"],
-            "Disciplinary Committee": ["Dean", "Principal"]
+            "Men's Hostel": ["Men's Hostel Warden", "Men's Hostel Deputy Warden", "Senior Deputy Warden", "Admin"],
+            "Women's Hostel": ["Women's Hostel Warden", "Women's Hostel Deputy Warden", "Senior Deputy Warden", "Admin"],
+            "Department": ["HOD", "Admin"],
+            "General": ["Admin Officer", "Admin"],
+            "Disciplinary Committee": ["Disciplinary Committee", "Admin"]
         }
-        
-        types_to_try = fallback_types.get(category_name, ["Admin", "Dean"])
-        
+
+        types_to_try = fallback_types.get(category_name, ["Admin"])
+
         for authority_type in types_to_try:
             authorities = await authority_repo.get_by_type(authority_type)
             if authorities:
                 logger.info(f"Fallback routing: Found {authority_type}")
                 return authorities[0]
-        
+
         logger.error("Fallback routing failed - no authorities available")
         return None
     

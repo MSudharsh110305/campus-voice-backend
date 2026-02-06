@@ -271,9 +271,13 @@ class ComplaintRepository(BaseRepository[Complaint]):
         conditions = [Complaint.assigned_authority_id == authority_id]
         if status:
             conditions.append(Complaint.status == status)
-        
+
         query = (
             select(Complaint)
+            .options(
+                selectinload(Complaint.student),
+                selectinload(Complaint.category)
+            )
             .where(and_(*conditions))
             .order_by(desc(Complaint.priority_score))
             .offset(skip)
@@ -281,35 +285,57 @@ class ComplaintRepository(BaseRepository[Complaint]):
         )
         result = await self.session.execute(query)
         return result.scalars().all()
-    
+
     async def get_public_feed(
         self,
         student_stay_type: str,
         student_department_id: int,
+        student_gender: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[Complaint]:
         """
         Get public feed filtered by visibility rules.
-        
+
         Args:
-            student_stay_type: Student's stay type
-            student_department_id: Student's department
+            student_stay_type: Student's stay type (Hostel/Day Scholar)
+            student_department_id: Student's department ID
+            student_gender: Student's gender (Male/Female/Other) for hostel filtering
             skip: Number to skip
             limit: Maximum results
-        
+
         Returns:
             List of complaints
         """
+        # Get category IDs for hostel categories
+        mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
+        womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
+        mens_hostel_result = await self.session.execute(mens_hostel_query)
+        womens_hostel_result = await self.session.execute(womens_hostel_query)
+        mens_hostel_id = mens_hostel_result.scalar()
+        womens_hostel_id = womens_hostel_result.scalar()
+
         conditions = [
             Complaint.visibility.in_(["Public", "Department"]),
             Complaint.status != "Closed"
         ]
-        
-        # Hide hostel complaints from day scholars
+
+        # Hide ALL hostel complaints from day scholars
         if student_stay_type == "Day Scholar":
-            conditions.append(Complaint.category_id != 1)  # 1 = Hostel
-        
+            if mens_hostel_id:
+                conditions.append(Complaint.category_id != mens_hostel_id)
+            if womens_hostel_id:
+                conditions.append(Complaint.category_id != womens_hostel_id)
+        else:
+            # Hostel students: Filter by gender
+            # Men should not see women's hostel complaints
+            # Women should not see men's hostel complaints
+            if student_gender == "Male" and womens_hostel_id:
+                conditions.append(Complaint.category_id != womens_hostel_id)
+            elif student_gender == "Female" and mens_hostel_id:
+                conditions.append(Complaint.category_id != mens_hostel_id)
+            # For "Other" gender, show both hostel categories
+
         # Hide inter-department complaints
         conditions.append(
             or_(
