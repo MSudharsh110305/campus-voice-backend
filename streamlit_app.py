@@ -152,6 +152,63 @@ def complaint_card(c, idx, prefix="comp"):
     st.divider()
 
 
+def complaint_card_with_voting(c, idx, prefix="comp"):
+    """Render complaint card with inline voting buttons."""
+    cat = c.get("category_name") or CATEGORIES.get(c.get("category_id"), "Unknown")
+    comp_status = c.get("status", "?")
+    priority = c.get("priority", "?")
+    text = c.get("rephrased_text") or c.get("original_text") or ""
+    up = c.get("upvotes", 0)
+    down = c.get("downvotes", 0)
+    submitted = (c.get("submitted_at") or "")[:16].replace("T", " ")
+    cid = c.get("id")
+
+    status_colors = {
+        "Raised": "orange", "In Progress": "blue", "Resolved": "green",
+        "Closed": "gray", "Spam": "red",
+    }
+    sc = status_colors.get(comp_status, "gray")
+
+    col1, col2, col3, col4, col5 = st.columns([2.5, 1.2, 1.5, 1.5, 0.8])
+    with col1:
+        st.markdown(f"**{cat}**")
+        st.caption(text[:100] + ("..." if len(text) > 100 else ""))
+    with col2:
+        st.markdown(f":{sc}[{comp_status}]")
+        st.caption(submitted)
+    with col3:
+        st.caption(f"Priority: {priority}")
+        if c.get("has_image"):
+            st.caption("Has image")
+    with col4:
+        # Inline voting
+        vc1, vc2, vc3 = st.columns(3)
+        with vc1:
+            if st.button(f"+{up}", key=f"{prefix}_up_{idx}", help="Upvote"):
+                r = api("POST", f"/complaints/{cid}/vote", json_body={"vote_type": "Upvote"})
+                if ok(r):
+                    st.rerun()
+                else:
+                    show_error(r)
+        with vc2:
+            if st.button(f"-{down}", key=f"{prefix}_dn_{idx}", help="Downvote"):
+                r = api("POST", f"/complaints/{cid}/vote", json_body={"vote_type": "Downvote"})
+                if ok(r):
+                    st.rerun()
+                else:
+                    show_error(r)
+        with vc3:
+            if st.button("X", key=f"{prefix}_rm_{idx}", help="Remove vote"):
+                r = api("DELETE", f"/complaints/{cid}/vote")
+                if ok(r):
+                    st.rerun()
+    with col5:
+        if st.button("View", key=f"{prefix}_v_{idx}"):
+            st.session_state.selected_complaint = cid
+            st.rerun()
+    st.divider()
+
+
 def pagination_controls(total, skip, limit, key_prefix="pg"):
     """Show pagination and return (new_skip, new_limit)."""
     total_pages = max(1, -(-total // limit))  # ceil division
@@ -412,7 +469,7 @@ def page_public_feed():
         return
 
     for i, c in enumerate(complaints):
-        complaint_card(c, i, prefix="pf")
+        complaint_card_with_voting(c, i, prefix="pf")
 
     pagination_controls(total, skip, limit, key_prefix="pf_pg")
 

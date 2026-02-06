@@ -163,6 +163,19 @@ class VoteRepository(BaseRepository[Vote]):
             "total": len(votes)
         }
     
+    async def count_votes_by_student(
+        self,
+        student_roll_no: str
+    ) -> int:
+        """Count total votes cast by a student."""
+        from sqlalchemy import func
+        query = select(Vote).where(Vote.student_roll_no == student_roll_no)
+        count_query = select(func.count(Vote.id)).where(
+            Vote.student_roll_no == student_roll_no
+        )
+        result = await self.session.execute(count_query)
+        return result.scalar() or 0
+
     async def has_voted(
         self,
         complaint_id: UUID,

@@ -200,7 +200,9 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                     await seed_initial_data(session)
                 else:
                     logger.info(f"✅ Database already contains {count} departments")
-            
+                    # Still seed authorities if missing
+                    await seed_authorities(session)
+
             logger.info("✅ Database initialization complete")
             return
         
@@ -254,11 +256,88 @@ async def seed_initial_data(session: AsyncSession):
         
         await session.commit()
         logger.info("✅ Initial data seeded successfully")
-    
+
+        # Seed default authorities
+        await seed_authorities(session)
+
     except Exception as e:
         await session.rollback()
         logger.error(f"❌ Failed to seed initial data: {e}", exc_info=True)
         raise
+
+
+async def seed_authorities(session: AsyncSession):
+    """Seed default authority accounts for testing."""
+    from src.database.models import Authority
+    from src.services.auth_service import auth_service
+
+    try:
+        result = await session.execute(text("SELECT COUNT(*) FROM authorities"))
+        count = result.scalar()
+        if count and count > 0:
+            logger.info(f"✅ Authorities already seeded ({count} found)")
+            return
+
+        authorities = [
+            {
+                "name": "Admin User",
+                "email": "admin@campusvoice.edu",
+                "password": "Admin@123456",
+                "authority_type": "Admin",
+                "authority_level": 100,
+                "designation": "System Administrator",
+                "department_id": None,
+            },
+            {
+                "name": "Dr. Rajesh Kumar",
+                "email": "warden@campusvoice.edu",
+                "password": "Warden@12345",
+                "authority_type": "Warden",
+                "authority_level": 5,
+                "designation": "Chief Warden",
+                "department_id": None,
+            },
+            {
+                "name": "Dr. Priya Sharma",
+                "email": "hod.cse@campusvoice.edu",
+                "password": "HodCse@12345",
+                "authority_type": "HOD",
+                "authority_level": 8,
+                "designation": "Head of Department - CSE",
+                "department_id": 1,
+            },
+            {
+                "name": "Mr. Suresh Reddy",
+                "email": "officer@campusvoice.edu",
+                "password": "Officer@1234",
+                "authority_type": "Admin Officer",
+                "authority_level": 50,
+                "designation": "Administrative Officer",
+                "department_id": None,
+            },
+            {
+                "name": "Dr. Anand Verma",
+                "email": "dc@campusvoice.edu",
+                "password": "Discip@12345",
+                "authority_type": "Disciplinary Committee",
+                "authority_level": 20,
+                "designation": "Disciplinary Committee Chair",
+                "department_id": None,
+            },
+        ]
+
+        for auth_data in authorities:
+            password = auth_data.pop("password")
+            auth_data["password_hash"] = auth_service.hash_password(password)
+            authority = Authority(**auth_data)
+            session.add(authority)
+
+        await session.commit()
+        logger.info(f"✅ Seeded {len(authorities)} default authorities")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"❌ Failed to seed authorities: {e}", exc_info=True)
 
 
 # ==================== DATABASE HEALTH CHECK ====================
