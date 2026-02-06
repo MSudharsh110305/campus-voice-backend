@@ -682,13 +682,17 @@ async def get_authority_complaint(
             detail="Complaint not found"
         )
     
-    # Check if assigned to this authority
-    if complaint.assigned_authority_id != authority_id:
+    # Check if assigned to this authority (Admin can access any complaint)
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+
+    if not is_admin and complaint.assigned_authority_id != authority_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This complaint is not assigned to you"
         )
-    
+
     return complaint
 
 
