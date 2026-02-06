@@ -466,8 +466,13 @@ class ComplaintService:
         if not complaint:
             raise ValueError("Complaint not found")
         
-        # Check if authority has permission
-        if complaint.assigned_authority_id != authority_id:
+        # Check if authority has permission (Admin can update any complaint)
+        from src.repositories.authority_repo import AuthorityRepository
+        authority_repo = AuthorityRepository(self.db)
+        authority = await authority_repo.get(authority_id)
+        is_admin = authority and authority.authority_type == "Admin"
+
+        if not is_admin and complaint.assigned_authority_id != authority_id:
             raise PermissionError("Not authorized to update this complaint")
         
         old_status = complaint.status
