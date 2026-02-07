@@ -148,8 +148,13 @@ async def create_all_tables():
         logger.info("✅ Database tables created successfully")
     
     except Exception as e:
-        logger.error(f"❌ Failed to create database tables: {e}", exc_info=True)
-        raise
+        # Ignore IntegrityError from race condition when multiple workers
+        # try to create tables simultaneously (e.g. gunicorn with 2+ workers)
+        if "already exists" in str(e):
+            logger.warning("⚠️ Tables already exist (likely created by another worker), skipping")
+        else:
+            logger.error(f"❌ Failed to create database tables: {e}", exc_info=True)
+            raise
 
 
 async def drop_all_tables():
