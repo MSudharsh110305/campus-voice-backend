@@ -15,8 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import get_db  # ✅ FIXED IMPORT
-from src.api.dependencies import get_current_student  # ✅ FIXED IMPORT
+from src.api.dependencies import get_db, get_current_student  # ✅ FIXED IMPORT
 from src.schemas.student import (
     StudentRegister,
     StudentLogin,
@@ -114,16 +113,20 @@ async def register_student(
         )
         
         logger.info(f"Student registered: {student.roll_no}")
-        
+
         return StudentResponse(
             roll_no=student.roll_no,
             name=student.name,
             email=student.email,
+            gender=student.gender,
+            stay_type=student.stay_type,
+            year=student.year,
+            department_id=student.department_id,
             token=token,
             token_type="Bearer",
             expires_in=auth_service.get_token_expiration_seconds()
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -189,16 +192,20 @@ async def login_student(
         )
         
         logger.info(f"Student logged in: {student.roll_no}")
-        
+
         return StudentResponse(
             roll_no=student.roll_no,
             name=student.name,
             email=student.email,
+            gender=student.gender,
+            stay_type=student.stay_type,
+            year=student.year,
+            department_id=student.department_id,
             token=token,
             token_type="Bearer",
             expires_in=auth_service.get_token_expiration_seconds()
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

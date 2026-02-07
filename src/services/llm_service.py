@@ -73,11 +73,11 @@ class LLMService:
         """
         if not text or len(text.strip()) < MIN_COMPLAINT_LENGTH:
             logger.warning("Text too short for categorization")
-            return self._fallback_categorization(text)
+            return self._fallback_categorization(text, context)
 
         if not self.groq_client:
             logger.info("Groq client unavailable, using fallback categorization")
-            return self._fallback_categorization(text)
+            return self._fallback_categorization(text, context)
 
         prompt = self._build_categorization_prompt(text, context)
 
@@ -105,12 +105,12 @@ class LLMService:
             
             if not result:
                 logger.warning("Failed to parse LLM response as JSON, using fallback")
-                return self._fallback_categorization(text)
+                return self._fallback_categorization(text, context)
             
             # Validate result
             if not self._validate_categorization_result(result):
                 logger.warning("Invalid categorization result, using fallback")
-                return self._fallback_categorization(text)
+                return self._fallback_categorization(text, context)
             
             # Add metadata
             result["tokens_used"] = response.usage.total_tokens
@@ -126,30 +126,41 @@ class LLMService:
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
-            return self._fallback_categorization(text)
+            return self._fallback_categorization(text, context)
         except Exception as e:
             logger.error(f"LLM categorization error: {e}")
-            return self._fallback_categorization(text)
+            return self._fallback_categorization(text, context)
     
     def _build_categorization_prompt(self, text: str, context: Dict[str, str]) -> str:
         """Build prompt for categorization"""
-        return f"""You are a complaint categorization system for a campus grievance portal.
+        gender = context.get('gender', 'Unknown')
+        stay_type = context.get('stay_type', 'Unknown')
+        department = context.get('department', 'Unknown')
+
+        return f"""You are a complaint categorization system for SREC college campus.
 
 Student Profile:
-- Gender: {context.get('gender', 'Unknown')}
-- Residence Type: {context.get('stay_type', 'Unknown')}
-- Department: {context.get('department', 'Unknown')}
+- Gender: {gender}
+- Residence Type: {stay_type}
+- Department: {department}
 
 Complaint Text:
 "{text}"
 
-Categories:
-1. **Hostel** - Hostel facilities, cleanliness, room issues, mess complaints, hostel amenities, water supply, electricity in hostel
-2. **General** - Canteen, library, playground, common areas, campus facilities, transport, parking
-3. **Department** - Academic issues, lab facilities, department infrastructure, classroom issues, equipment problems
-4. **Disciplinary Committee** - Ragging, harassment, bullying, serious violations, safety concerns, threats
+Categories (choose EXACTLY ONE):
+1. **Men's Hostel** - Hostel room, mess food, hostel bathroom, water supply, hostel electricity, hostel cleanliness, hostel amenities. ONLY for Male Hostel students.
+2. **Women's Hostel** - Hostel room, mess food, hostel bathroom, water supply, hostel electricity, hostel cleanliness, hostel amenities. ONLY for Female Hostel students.
+3. **General** - Campus infrastructure and physical facilities ONLY: canteen, library, playground, parking, transport, gym, auditorium, campus buildings, roads, drinking water stations, common area furniture, campus wifi/internet.
+4. **Department** - Academic and department-specific: lab equipment, classroom issues, faculty/teaching concerns, timetable, curriculum, exam issues, project/internship, department infrastructure.
+5. **Disciplinary Committee** - Ragging, harassment, bullying, threats, violence, abuse, serious misconduct, safety concerns.
 
-Task: Categorize this complaint into EXACTLY ONE category.
+STRICT RULES (you MUST follow these):
+- If Residence Type is "Day Scholar", NEVER choose "Men's Hostel" or "Women's Hostel". Use "General" for any facility complaint instead.
+- If Gender is "Male" and complaint is about hostel, choose "Men's Hostel".
+- If Gender is "Female" and complaint is about hostel, choose "Women's Hostel".
+- "General" = physical infrastructure and materialistic issues on campus (NOT academic, NOT hostel).
+- "Department" = academic, faculty, lab, classroom, course-related issues.
+- Only use "Disciplinary Committee" for serious safety/harassment/ragging issues.
 
 Priority Levels:
 - **Low**: Minor inconvenience, cosmetic issues
@@ -157,13 +168,9 @@ Priority Levels:
 - **High**: Significant impact, urgent attention needed
 - **Critical**: Safety concern, immediate action required
 
-Also determine:
-- Is this complaint against an authority/staff member? (true/false)
-- Does this complaint require image evidence? (true/false)
-
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
-  "category": "Hostel|General|Department|Disciplinary Committee",
+  "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
   "priority": "Low|Medium|High|Critical",
   "reasoning": "Brief explanation (max 50 words)",
   "is_against_authority": false,
@@ -210,7 +217,7 @@ JSON Response:"""
         if not all(field in result for field in required_fields):
             return False
         
-        valid_categories = ["Hostel", "General", "Department", "Disciplinary Committee"]
+        valid_categories = ["Men's Hostel", "Women's Hostel", "General", "Department", "Disciplinary Committee"]
         valid_priorities = ["Low", "Medium", "High", "Critical"]
         
         if result["category"] not in valid_categories:
@@ -221,31 +228,45 @@ JSON Response:"""
         
         return True
     
-    def _fallback_categorization(self, text: str) -> Dict[str, Any]:
-        """Fallback categorization using keyword matching"""
+    def _fallback_categorization(self, text: str, context: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Fallback categorization using keyword matching with student context"""
         text_lower = text.lower()
-        
+
         # Keyword-based categorization
         category_keywords = {
-            "Hostel": ["hostel", "room", "mess", "warden", "dorm", "hostel", "bed", "bathroom", "water supply", "electricity", "ac", "fan"],
+            "Hostel": ["hostel", "room", "mess", "warden", "dorm", "bed", "bathroom", "water supply", "electricity", "ac", "fan"],
             "Department": ["lab", "classroom", "department", "academic", "faculty", "professor", "teacher", "lecture", "course", "exam", "lab equipment"],
             "Disciplinary Committee": ["ragging", "harassment", "bullying", "threat", "abuse", "safety", "assault", "violence", "discrimination"],
-            "General": ["canteen", "library", "playground", "ground", "parking", "transport", "bus", "wifi", "internet", "campus"]
+            "General": ["canteen", "library", "playground", "ground", "parking", "transport", "bus", "wifi", "internet", "campus", "infrastructure"]
         }
-        
+
         # Count keyword matches for each category
         category_scores = {}
         for category, keywords in category_keywords.items():
             score = sum(1 for keyword in keywords if keyword in text_lower)
             if score > 0:
                 category_scores[category] = score
-        
+
         # Select category with highest score
         if category_scores:
             selected_category = max(category_scores, key=category_scores.get)
         else:
             selected_category = "General"
-        
+
+        # Map generic "Hostel" to gender-specific category using student context
+        if selected_category == "Hostel":
+            if context:
+                stay_type = context.get("stay_type", "")
+                gender = context.get("gender", "")
+                if stay_type == "Day Scholar":
+                    selected_category = "General"
+                elif gender == "Female":
+                    selected_category = "Women's Hostel"
+                else:
+                    selected_category = "Men's Hostel"
+            else:
+                selected_category = "Men's Hostel"
+
         # Determine priority based on urgency keywords
         urgency_keywords = {
             "Critical": ["emergency", "urgent", "immediate", "critical", "dangerous", "unsafe"],
@@ -253,15 +274,15 @@ JSON Response:"""
             "Medium": ["issue", "concern", "needs", "improve"],
             "Low": ["suggestion", "request", "minor"]
         }
-        
+
         selected_priority = "Medium"
         for priority, keywords in urgency_keywords.items():
             if any(keyword in text_lower for keyword in keywords):
                 selected_priority = priority
                 break
-        
+
         logger.info(f"Fallback categorization: {selected_category} (Priority: {selected_priority})")
-        
+
         return {
             "category": selected_category,
             "priority": selected_priority,
@@ -304,7 +325,7 @@ JSON Response:"""
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,  # Lower for more consistent rephrasing
-                max_tokens=400,
+                max_tokens=200,
                 timeout=self.timeout
             )
             
@@ -327,23 +348,21 @@ JSON Response:"""
     
     def _build_rephrasing_prompt(self, text: str) -> str:
         """Build prompt for rephrasing"""
-        return f"""Rephrase this student complaint to be professional, clear, and concise while preserving all key information.
+        return f"""Rephrase this student complaint into 1-2 short, clear sentences. Keep the original meaning intact.
 
-Original Complaint:
+Original:
 "{text}"
 
-Guidelines:
-- Remove slang and informal language
-- Fix grammar and spelling errors
-- Structure with: Issue → Impact → Request/Expectation
-- Keep it under 200 words
-- Maintain the original concern and all important details
-- Do NOT add information not in the original
-- Be respectful and professional
-- Use active voice
-- Be specific and factual
+Rules:
+- Output 1-2 concise sentences ONLY (max 50 words)
+- Preserve the core issue and key details
+- Fix grammar and spelling
+- Keep it natural and professional
+- Do NOT add new information
+- Do NOT use bullet points or structured format
+- Do NOT start with "The student" or "I would like to"
 
-Provide ONLY the rephrased complaint text (no explanations, no labels):"""
+Provide ONLY the rephrased text:"""
     
     # ==================== SPAM DETECTION ====================
     

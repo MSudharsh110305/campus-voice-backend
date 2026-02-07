@@ -16,23 +16,32 @@ from datetime import datetime, date
 BASE_URL = "http://localhost:8000"
 API = f"{BASE_URL}/api"
 
+# Must match constants.py DEPARTMENTS (all 13, seeded by connection.py)
 DEPARTMENTS = {
     1: "CSE - Computer Science & Engineering",
-    2: "ECE - Electronics & Communication",
+    2: "ECE - Electronics & Communication Engineering",
     3: "RAA - Robotics and Automation",
     4: "MECH - Mechanical Engineering",
-    5: "EEE - Electrical & Electronics",
-    6: "EIE - Electronics & Instrumentation",
+    5: "EEE - Electrical & Electronics Engineering",
+    6: "EIE - Electronics & Instrumentation Engineering",
     7: "BIO - Biomedical Engineering",
     8: "AERO - Aeronautical Engineering",
     9: "CIVIL - Civil Engineering",
     10: "IT - Information Technology",
     11: "MBA - Management Studies",
-    12: "AIDS - AI and Data Science",
-    13: "MTECH_CSE - M.Tech CSE",
+    12: "AIDS - Artificial Intelligence and Data Science",
+    13: "MTECH_CSE - M.Tech in Computer Science and Engineering",
 }
 
-CATEGORIES = {1: "Hostel", 2: "General", 3: "Department", 4: "Disciplinary Committee"}
+# Must match the 5 categories seeded via lifespan/setup
+# (Men's Hostel, Women's Hostel, General, Department, Disciplinary Committee)
+CATEGORIES = {
+    1: "Men's Hostel",
+    2: "Women's Hostel",
+    3: "General",
+    4: "Department",
+    5: "Disciplinary Committee",
+}
 
 STATUSES = ["Raised", "In Progress", "Resolved", "Closed", "Spam"]
 PRIORITIES = ["Low", "Medium", "High", "Critical"]
@@ -98,6 +107,8 @@ def show_error(resp):
     try:
         body = resp.json()
         msg = body.get("error") or body.get("detail") or f"Error {resp.status_code}"
+        if isinstance(msg, dict):
+            msg = msg.get("error") or msg.get("reason") or str(msg)
         st.error(msg)
         details = body.get("details") or {}
         for ve in details.get("validation_errors", []):
@@ -119,7 +130,7 @@ def logout():
 def complaint_card(c, idx, prefix="comp"):
     """Render a single complaint card. Returns True if View was clicked."""
     cat = c.get("category_name") or CATEGORIES.get(c.get("category_id"), "Unknown")
-    status = c.get("status", "?")
+    comp_status = c.get("status", "?")
     priority = c.get("priority", "?")
     text = c.get("rephrased_text") or c.get("original_text") or ""
     up = c.get("upvotes", 0)
@@ -130,14 +141,14 @@ def complaint_card(c, idx, prefix="comp"):
         "Raised": "orange", "In Progress": "blue", "Resolved": "green",
         "Closed": "gray", "Spam": "red",
     }
-    sc = status_colors.get(status, "gray")
+    sc = status_colors.get(comp_status, "gray")
 
     col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1, 1.2, 0.8])
     with col1:
         st.markdown(f"**{cat}**")
         st.caption(text[:120] + ("..." if len(text) > 120 else ""))
     with col2:
-        st.markdown(f":{sc}[{status}]")
+        st.markdown(f":{sc}[{comp_status}]")
         st.caption(submitted)
     with col3:
         st.caption(f"Priority: **{priority}**")
@@ -181,7 +192,6 @@ def complaint_card_with_voting(c, idx, prefix="comp"):
         if c.get("has_image"):
             st.caption("Has image")
     with col4:
-        # Inline voting
         vc1, vc2, vc3 = st.columns(3)
         with vc1:
             if st.button(f"+{up}", key=f"{prefix}_up_{idx}", help="Upvote"):
@@ -211,7 +221,7 @@ def complaint_card_with_voting(c, idx, prefix="comp"):
 
 def pagination_controls(total, skip, limit, key_prefix="pg"):
     """Show pagination and return (new_skip, new_limit)."""
-    total_pages = max(1, -(-total // limit))  # ceil division
+    total_pages = max(1, -(-total // limit))
     current_page = (skip // limit) + 1
 
     cols = st.columns([1, 2, 1])
@@ -238,7 +248,7 @@ def page_auth():
 
     tab_sl, tab_al, tab_reg = st.tabs(["Student Login", "Authority Login", "Student Register"])
 
-    # ── Student Login ──
+    # -- Student Login --
     with tab_sl:
         with st.form("student_login"):
             email_or_roll = st.text_input("Email or Roll Number")
@@ -262,12 +272,12 @@ def page_auth():
                 else:
                     show_error(resp)
 
-    # ── Authority Login ──
+    # -- Authority / Admin Login --
     with tab_al:
         with st.form("authority_login"):
             a_email = st.text_input("Email")
             a_pass = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login as Authority")
+            submitted = st.form_submit_button("Login as Authority / Admin")
         if submitted:
             if not a_email or not a_pass:
                 st.warning("Please fill in all fields.")
@@ -279,19 +289,23 @@ def page_auth():
                 if ok(resp):
                     d = resp.json()
                     st.session_state.token = d["token"]
-                    st.session_state.role = "Authority"
+                    # Detect admin from authority_type
+                    if d.get("authority_type") == "Admin":
+                        st.session_state.role = "Admin"
+                    else:
+                        st.session_state.role = "Authority"
                     st.session_state.user = d
                     st.success(f"Welcome, {d['name']}!")
                     st.rerun()
                 else:
                     show_error(resp)
 
-    # ── Student Register ──
+    # -- Student Register --
     with tab_reg:
         with st.form("student_register"):
             r_roll = st.text_input("Roll Number (e.g. 22CS231)")
             r_name = st.text_input("Full Name")
-            r_email = st.text_input("Email")
+            r_email = st.text_input("Email (@srec.ac.in)")
             r_pass = st.text_input("Password (min 8, 1 upper, 1 lower, 1 digit)", type="password")
             rc1, rc2 = st.columns(2)
             r_gender = rc1.selectbox("Gender", GENDERS)
@@ -355,10 +369,29 @@ def page_student_dashboard():
 
 def page_submit_complaint():
     st.header("Submit Complaint")
+
+    # Filter categories based on student context
+    user = st.session_state.user or {}
+    stay_type = user.get("stay_type", "")
+    gender = user.get("gender", "")
+
+    available_categories = {}
+    for cat_id, cat_name in CATEGORIES.items():
+        # Day scholars cannot submit hostel complaints
+        if stay_type == "Day Scholar" and cat_name in ("Men's Hostel", "Women's Hostel"):
+            continue
+        # Hostel students only see their gender's hostel category
+        if stay_type == "Hostel":
+            if gender == "Male" and cat_name == "Women's Hostel":
+                continue
+            if gender == "Female" and cat_name == "Men's Hostel":
+                continue
+        available_categories[cat_id] = cat_name
+
     with st.form("submit_complaint"):
         category = st.selectbox(
-            "Category", options=list(CATEGORIES.keys()),
-            format_func=lambda x: CATEGORIES[x],
+            "Category", options=list(available_categories.keys()),
+            format_func=lambda x: available_categories[x],
         )
         text = st.text_area(
             "Describe your complaint (10-2000 characters)",
@@ -479,7 +512,7 @@ def page_advanced_search():
 
     with st.form("adv_search"):
         c1, c2, c3 = st.columns(3)
-        status = c1.selectbox("Status", ["Any"] + STATUSES)
+        status_val = c1.selectbox("Status", ["Any"] + STATUSES)
         priority = c2.selectbox("Priority", ["Any"] + PRIORITIES)
         cat_id = c3.selectbox("Category", ["Any"] + list(CATEGORIES.keys()),
                               format_func=lambda x: "Any" if x == "Any" else CATEGORIES[x])
@@ -498,8 +531,8 @@ def page_advanced_search():
 
     if submitted:
         params = {"skip": 0, "limit": 50}
-        if status != "Any":
-            params["status"] = status
+        if status_val != "Any":
+            params["status"] = status_val
         if priority != "Any":
             params["priority"] = priority
         if cat_id != "Any":
@@ -704,12 +737,11 @@ def page_complaint_detail_student():
     st.header(f"Complaint: {CATEGORIES.get(c.get('category_id'), c.get('category_name', 'Unknown'))}")
     st.caption(f"ID: {cid}")
 
-    # Tabs
     tab_info, tab_image, tab_history, tab_vote = st.tabs(
         ["Details", "Image", "History & Timeline", "Vote"]
     )
 
-    # ── Details Tab ──
+    # -- Details Tab --
     with tab_info:
         col1, col2 = st.columns(2)
         with col1:
@@ -731,13 +763,12 @@ def page_complaint_detail_student():
             st.subheader("Rephrased Text")
             st.info(c["rephrased_text"])
 
-        # Extra detail fields
         if c.get("status_updates"):
             st.subheader("Status Updates")
             for su in c["status_updates"]:
                 st.write(f"  {su.get('old_status')} -> {su.get('new_status')}: {su.get('reason', '-')}")
 
-    # ── Image Tab ──
+    # -- Image Tab --
     with tab_image:
         if c.get("has_image"):
             st.write(f"**Filename:** {c.get('image_filename', '-')}")
@@ -751,13 +782,11 @@ def page_complaint_detail_student():
             else:
                 st.warning("Could not load image.")
 
-            # Thumbnail
             if st.button("Load Thumbnail"):
                 thumb_resp = api("GET", f"/complaints/{cid}/image", params={"thumbnail": "true"})
                 if ok(thumb_resp):
                     st.image(thumb_resp.content, caption="Thumbnail (200x200)")
 
-            # Verify image
             if st.button("Re-verify Image"):
                 with st.spinner("Verifying with LLM..."):
                     vr = api("POST", f"/complaints/{cid}/verify-image")
@@ -769,7 +798,6 @@ def page_complaint_detail_student():
                     show_error(vr)
         else:
             st.info("No image attached to this complaint.")
-            # Upload image if own complaint
             own_roll = st.session_state.user.get("roll_no") if st.session_state.user else None
             complaint_roll = c.get("student_roll_no")
             if own_roll and complaint_roll and own_roll == complaint_roll:
@@ -791,7 +819,7 @@ def page_complaint_detail_student():
                     else:
                         show_error(ur)
 
-    # ── History Tab ──
+    # -- History Tab --
     with tab_history:
         st.subheader("Status History")
         hr = api("GET", f"/complaints/{cid}/status-history")
@@ -826,9 +854,8 @@ def page_complaint_detail_student():
         elif tr is not None:
             show_error(tr)
 
-    # ── Vote Tab ──
+    # -- Vote Tab --
     with tab_vote:
-        # Check current vote
         vr = api("GET", f"/complaints/{cid}/my-vote")
         current_vote = None
         if ok(vr):
@@ -889,12 +916,10 @@ def page_authority_dashboard():
     profile = d.get("profile", {})
     stats = d.get("stats", {})
 
-    # Profile summary
     st.subheader(f"{profile.get('name', '?')} - {profile.get('authority_type', '?')}")
     if profile.get("designation"):
         st.caption(profile["designation"])
 
-    # Stats
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Total Assigned", stats.get("total_assigned", 0))
     c2.metric("Pending", stats.get("pending", 0))
@@ -910,7 +935,6 @@ def page_authority_dashboard():
         sc2.metric("Performance Rating", f"{stats['performance_rating']:.1f}")
     sc3.metric("Unread Notifications", d.get("unread_notifications", 0))
 
-    # Recent complaints
     recent = d.get("recent_complaints", [])
     if recent:
         st.divider()
@@ -926,7 +950,6 @@ def page_authority_dashboard():
                 st.session_state.selected_complaint = c.get("id")
                 st.rerun()
 
-    # Urgent complaints
     urgent = d.get("urgent_complaints", [])
     if urgent:
         st.divider()
@@ -1057,7 +1080,7 @@ def page_complaint_detail_authority():
         ["Details", "Image", "History & Escalation", "Actions", "Spam"]
     )
 
-    # ── Details Tab ──
+    # -- Details Tab --
     with tab_info:
         col1, col2 = st.columns(2)
         with col1:
@@ -1090,7 +1113,7 @@ def page_complaint_detail_authority():
                     f"| {su.get('reason', '-')} | {(su.get('updated_at') or '')[:16]}"
                 )
 
-    # ── Image Tab ──
+    # -- Image Tab --
     with tab_image:
         if c.get("has_image"):
             st.write(f"**Filename:** {c.get('image_filename', '-')}")
@@ -1104,7 +1127,7 @@ def page_complaint_detail_authority():
         else:
             st.info("No image attached.")
 
-    # ── History Tab ──
+    # -- History Tab --
     with tab_history:
         st.subheader("Status History")
         hr = api("GET", f"/complaints/{cid}/status-history")
@@ -1149,12 +1172,11 @@ def page_complaint_detail_authority():
         elif er is not None:
             show_error(er)
 
-    # ── Actions Tab ──
+    # -- Actions Tab --
     with tab_actions:
         current_status = c.get("status", "")
         transitions = VALID_TRANSITIONS.get(current_status, [])
 
-        # Update Status
         st.subheader("Update Status")
         if transitions:
             with st.form("update_status"):
@@ -1176,7 +1198,6 @@ def page_complaint_detail_authority():
 
         st.divider()
 
-        # Post Update
         st.subheader("Post Update")
         with st.form("post_update"):
             pu_title = st.text_input("Title (5-200 chars)")
@@ -1198,7 +1219,6 @@ def page_complaint_detail_authority():
 
         st.divider()
 
-        # Escalate
         st.subheader("Escalate Complaint")
         with st.form("escalate"):
             esc_reason = st.text_input("Reason for escalation")
@@ -1215,7 +1235,7 @@ def page_complaint_detail_authority():
                 else:
                     show_error(r)
 
-    # ── Spam Tab ──
+    # -- Spam Tab --
     with tab_spam:
         is_spam = c.get("is_marked_as_spam", False)
         st.write(f"**Currently flagged as spam:** {is_spam}")
@@ -1247,7 +1267,358 @@ def page_complaint_detail_authority():
 
 
 # ════════════════════════════════════════════════════════════════
-# HEALTH CHECK
+# ADMIN PAGES
+# ════════════════════════════════════════════════════════════════
+
+def page_admin_overview():
+    st.header("Admin - System Overview")
+
+    resp = api("GET", "/admin/stats/overview")
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Students", d.get("total_students", 0))
+    c2.metric("Total Authorities", d.get("total_authorities", 0))
+    c3.metric("Total Complaints", d.get("total_complaints", 0))
+    c4.metric("Recent (7d)", d.get("recent_complaints_7d", 0))
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Complaints by Status")
+        status_data = d.get("complaints_by_status", {})
+        if status_data:
+            for k, v in status_data.items():
+                st.write(f"  **{k}:** {v}")
+        else:
+            st.caption("No data")
+
+    with col2:
+        st.subheader("Complaints by Priority")
+        priority_data = d.get("complaints_by_priority", {})
+        if priority_data:
+            for k, v in priority_data.items():
+                st.write(f"  **{k}:** {v}")
+        else:
+            st.caption("No data")
+
+    st.divider()
+
+    col3, col4 = st.columns(2)
+    with col3:
+        st.subheader("Complaints by Category")
+        cat_data = d.get("complaints_by_category", {})
+        if cat_data:
+            for k, v in cat_data.items():
+                st.write(f"  **{k}:** {v}")
+        else:
+            st.caption("No data")
+
+    with col4:
+        st.subheader("Image Statistics")
+        img_data = d.get("image_statistics", {})
+        if img_data:
+            for k, v in img_data.items():
+                st.write(f"  **{k}:** {v}")
+        else:
+            st.caption("No data")
+
+
+def page_admin_analytics():
+    st.header("Admin - Analytics")
+
+    days = st.slider("Analysis period (days)", min_value=7, max_value=365, value=30)
+
+    resp = api("GET", "/admin/stats/analytics", params={"days": days})
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Complaints", d.get("total_complaints", 0))
+    c2.metric("Resolved", d.get("resolved_complaints", 0))
+    c3.metric("Resolution Rate", f"{d.get('resolution_rate_percent', 0):.1f}%")
+    c4.metric("Avg Resolution (hrs)", f"{d.get('avg_resolution_time_hours', 0):.1f}")
+
+    daily = d.get("daily_complaints", [])
+    if daily:
+        st.divider()
+        st.subheader("Daily Complaint Trend")
+        import pandas as pd
+        df = pd.DataFrame(daily)
+        if not df.empty:
+            df["date"] = pd.to_datetime(df["date"])
+            st.line_chart(df.set_index("date")["count"])
+
+
+def page_admin_authorities():
+    st.header("Admin - Authority Management")
+
+    col1, col2 = st.columns([1, 3])
+    filter_active = col1.selectbox("Status", ["All", "Active", "Inactive"], key="auth_filter")
+
+    params = {"skip": 0, "limit": 50}
+    if filter_active == "Active":
+        params["is_active"] = "true"
+    elif filter_active == "Inactive":
+        params["is_active"] = "false"
+
+    resp = api("GET", "/admin/authorities", params=params)
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+    authorities = d.get("authorities", [])
+    total = d.get("total", 0)
+
+    st.caption(f"Total: {total}")
+
+    for i, a in enumerate(authorities):
+        cols = st.columns([2, 1.5, 1, 1, 1])
+        cols[0].write(f"**{a.get('name')}** ({a.get('email')})")
+        cols[1].write(f"{a.get('authority_type')} (Lv {a.get('authority_level')})")
+        cols[2].write(f"{'Active' if a.get('is_active') else 'Inactive'}")
+        dept = a.get('department_name') or '-'
+        cols[3].caption(dept)
+        active = a.get('is_active', True)
+        btn_label = "Deactivate" if active else "Activate"
+        if cols[4].button(btn_label, key=f"auth_toggle_{i}"):
+            r = api("PUT", f"/admin/authorities/{a['id']}/toggle-active",
+                    params={"activate": str(not active).lower()})
+            if ok(r):
+                st.success(r.json().get("message", "Done"))
+                st.rerun()
+            else:
+                show_error(r)
+        st.divider()
+
+    # Create new authority
+    st.divider()
+    st.subheader("Create New Authority")
+    with st.form("create_authority"):
+        ca_name = st.text_input("Name")
+        ca_email = st.text_input("Email")
+        ca_password = st.text_input("Password", type="password")
+        ca_phone = st.text_input("Phone (optional)")
+        ca_c1, ca_c2 = st.columns(2)
+        authority_types = [
+            "Admin", "Admin Officer", "Men's Hostel Warden", "Women's Hostel Warden",
+            "Men's Hostel Deputy Warden", "Women's Hostel Deputy Warden",
+            "Senior Deputy Warden", "HOD", "Disciplinary Committee",
+        ]
+        ca_type = ca_c1.selectbox("Authority Type", authority_types)
+        ca_level = ca_c2.number_input("Authority Level", min_value=1, max_value=100, value=5)
+        ca_dept = st.selectbox("Department (for HOD)", options=[None] + list(DEPARTMENTS.keys()),
+                               format_func=lambda x: "None" if x is None else DEPARTMENTS[x])
+        ca_designation = st.text_input("Designation (optional)")
+        submitted = st.form_submit_button("Create Authority")
+
+    if submitted:
+        if not all([ca_name, ca_email, ca_password]):
+            st.warning("Name, email and password are required.")
+        else:
+            body = {
+                "name": ca_name.strip(),
+                "email": ca_email.strip(),
+                "password": ca_password,
+                "authority_type": ca_type,
+                "authority_level": ca_level,
+            }
+            if ca_phone and ca_phone.strip():
+                body["phone"] = ca_phone.strip()
+            if ca_dept is not None:
+                body["department_id"] = ca_dept
+            if ca_designation and ca_designation.strip():
+                body["designation"] = ca_designation.strip()
+
+            r = api("POST", "/admin/authorities", json_body=body)
+            if ok(r):
+                st.success("Authority created successfully!")
+                st.rerun()
+            else:
+                show_error(r)
+
+
+def page_admin_students():
+    st.header("Admin - Student Management")
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+    filter_active = col1.selectbox("Status", ["All", "Active", "Inactive"], key="stu_filter")
+    filter_dept = col2.selectbox("Department", [None] + list(DEPARTMENTS.keys()),
+                                 format_func=lambda x: "All" if x is None else DEPARTMENTS[x],
+                                 key="stu_dept_filter")
+
+    params = {"skip": 0, "limit": 50}
+    if filter_active == "Active":
+        params["is_active"] = "true"
+    elif filter_active == "Inactive":
+        params["is_active"] = "false"
+    if filter_dept is not None:
+        params["department_id"] = filter_dept
+
+    resp = api("GET", "/admin/students", params=params)
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+    students = d.get("students", [])
+    total = d.get("total", 0)
+
+    st.caption(f"Total: {total}")
+
+    for i, s in enumerate(students):
+        cols = st.columns([1.5, 2, 1, 1, 1])
+        cols[0].write(f"**{s.get('roll_no')}**")
+        cols[1].write(f"{s.get('name')} ({s.get('email')})")
+        dept_name = s.get('department_name') or DEPARTMENTS.get(s.get('department_id'), '?')
+        cols[2].caption(f"{dept_name} Y{s.get('year', '?')}")
+        cols[3].write(f"{'Active' if s.get('is_active') else 'Inactive'}")
+        active = s.get('is_active', True)
+        btn_label = "Deactivate" if active else "Activate"
+        if cols[4].button(btn_label, key=f"stu_toggle_{i}"):
+            r = api("PUT", f"/admin/students/{s['roll_no']}/toggle-active",
+                    params={"activate": str(not active).lower()})
+            if ok(r):
+                st.success(r.json().get("message", "Done"))
+                st.rerun()
+            else:
+                show_error(r)
+        st.divider()
+
+
+def page_admin_bulk_ops():
+    st.header("Admin - Bulk Operations")
+
+    st.subheader("Bulk Status Update")
+    with st.form("bulk_status"):
+        complaint_ids_raw = st.text_area(
+            "Complaint IDs (one per line)",
+            height=100,
+            help="Paste complaint UUIDs, one per line"
+        )
+        new_status = st.selectbox("New Status", STATUSES)
+        reason = st.text_input("Reason for bulk update")
+        submitted = st.form_submit_button("Apply Bulk Update")
+
+    if submitted:
+        if not complaint_ids_raw.strip() or not reason.strip():
+            st.warning("Please provide complaint IDs and a reason.")
+        else:
+            ids = [line.strip() for line in complaint_ids_raw.strip().split("\n") if line.strip()]
+            r = api("POST", "/admin/complaints/bulk-status-update",
+                    params={
+                        "complaint_ids": ids,
+                        "new_status": new_status,
+                        "reason": reason.strip(),
+                    })
+            if ok(r):
+                st.success(r.json().get("message", "Bulk update complete!"))
+            else:
+                show_error(r)
+
+
+def page_admin_image_moderation():
+    st.header("Admin - Image Moderation")
+
+    resp = api("GET", "/admin/images/pending-verification")
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+    pending = d.get("pending_images", [])
+    total = d.get("total", 0)
+
+    st.caption(f"Pending images: {total}")
+
+    if not pending:
+        st.info("No images pending verification.")
+        return
+
+    for i, img in enumerate(pending):
+        cols = st.columns([2, 1, 1, 1])
+        cols[0].write(f"**{img.get('category', '?')}** - {img.get('complaint_text', '')}")
+        cols[1].caption(f"File: {img.get('image_filename', '?')} ({img.get('image_size_kb', 0)}KB)")
+        cols[2].caption(f"Student: {img.get('student_roll_no', '?')}")
+
+        bc1, bc2 = cols[3].columns(2)
+        if bc1.button("Approve", key=f"img_approve_{i}"):
+            r = api("POST", f"/admin/images/{img['complaint_id']}/moderate",
+                    params={"approve": "true"})
+            if ok(r):
+                st.success("Image approved!")
+                st.rerun()
+            else:
+                show_error(r)
+        if bc2.button("Reject", key=f"img_reject_{i}"):
+            r = api("POST", f"/admin/images/{img['complaint_id']}/moderate",
+                    params={"approve": "false", "reason": "Rejected by admin"})
+            if ok(r):
+                st.success("Image rejected!")
+                st.rerun()
+            else:
+                show_error(r)
+
+        # Show image preview
+        img_resp = api("GET", f"/complaints/{img['complaint_id']}/image")
+        if ok(img_resp):
+            st.image(img_resp.content, caption=img.get("image_filename", "Image"), width=300)
+        st.divider()
+
+
+def page_admin_health():
+    st.header("Admin - System Health")
+
+    resp = api("GET", "/admin/health/metrics")
+    if resp is None:
+        st.error("Cannot connect to backend.")
+        return
+    if not ok(resp):
+        show_error(resp)
+        return
+
+    d = resp.json()
+
+    c1, c2, c3 = st.columns(3)
+    if d.get("database_size_mb") is not None:
+        c1.metric("Database Size (MB)", f"{d['database_size_mb']:.2f}")
+    c2.metric("Pending Complaints", d.get("pending_complaints", 0))
+    c3.metric("Old Unresolved (>7d)", d.get("old_unresolved_7d", 0))
+
+    img_stats = d.get("image_statistics", {})
+    if img_stats:
+        st.divider()
+        st.subheader("Image Statistics")
+        for k, v in img_stats.items():
+            st.write(f"  **{k}:** {v}")
+
+
+# ════════════════════════════════════════════════════════════════
+# HEALTH CHECK (PUBLIC)
 # ════════════════════════════════════════════════════════════════
 
 def page_health():
@@ -1288,7 +1659,7 @@ def main():
     )
     init_session()
 
-    # ── Not logged in ──
+    # -- Not logged in --
     if not st.session_state.token:
         page_auth()
         with st.sidebar:
@@ -1303,7 +1674,7 @@ def main():
                     st.error("Backend not reachable.")
         return
 
-    # ── Logged in ──
+    # -- Logged in --
     with st.sidebar:
         st.title("CampusVoice")
         user = st.session_state.user or {}
@@ -1312,6 +1683,9 @@ def main():
         if role == "Student":
             st.write(f"**{user.get('name', '?')}**")
             st.caption(f"Roll: {user.get('roll_no', '?')} | {user.get('department_name', '')}")
+        elif role == "Admin":
+            st.write(f"**{user.get('name', '?')}**")
+            st.caption(f"Admin | {user.get('designation', '')}")
         else:
             st.write(f"**{user.get('name', '?')}**")
             st.caption(f"{user.get('authority_type', '?')} | {user.get('designation', '')}")
@@ -1330,6 +1704,21 @@ def main():
                 "Change Password": page_change_password,
                 "Health Check": page_health,
             }
+        elif role == "Admin":
+            pages = {
+                "System Overview": page_admin_overview,
+                "Analytics": page_admin_analytics,
+                "Authority Management": page_admin_authorities,
+                "Student Management": page_admin_students,
+                "Image Moderation": page_admin_image_moderation,
+                "Bulk Operations": page_admin_bulk_ops,
+                "System Health": page_admin_health,
+                "-- Authority Dashboard": page_authority_dashboard,
+                "-- Assigned Complaints": page_authority_complaints,
+                "-- Authority Stats": page_authority_stats,
+                "-- Authority Profile": page_authority_profile,
+                "Health Check": page_health,
+            }
         else:
             pages = {
                 "Dashboard": page_authority_dashboard,
@@ -1345,7 +1734,7 @@ def main():
         if st.button("Logout"):
             logout()
 
-    # ── Render page ──
+    # -- Render page --
     if st.session_state.selected_complaint:
         if role == "Student":
             page_complaint_detail_student()
