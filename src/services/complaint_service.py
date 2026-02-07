@@ -86,6 +86,16 @@ class ComplaintService:
             logger.warning(f"Blacklisted user {student_roll_no} attempted to create complaint")
             raise ValueError(error_msg)
 
+        # Validate category vs student profile
+        category_obj = await self.db.get(ComplaintCategory, category_id)
+        if category_obj and category_obj.name in ("Men's Hostel", "Women's Hostel"):
+            if student.stay_type == "Day Scholar":
+                raise ValueError("Day scholars cannot submit hostel complaints. Please choose a different category.")
+            if category_obj.name == "Men's Hostel" and student.gender == "Female":
+                raise ValueError("Female students should use the Women's Hostel category.")
+            if category_obj.name == "Women's Hostel" and student.gender == "Male":
+                raise ValueError("Male students should use the Men's Hostel category.")
+
         # Build context for LLM
         context = {
             "gender": student.gender or "Unknown",
@@ -477,8 +487,8 @@ class ComplaintService:
         
         old_status = complaint.status
         
-        # Don't allow updating already resolved complaints
-        if old_status == "Resolved" and new_status != "Reopened":
+        # Don't allow updating already resolved complaints (except Close or Reopen)
+        if old_status == "Resolved" and new_status not in ("Reopened", "Closed"):
             raise ValueError("Cannot modify resolved complaint")
         
         # Update status

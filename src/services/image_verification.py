@@ -225,27 +225,23 @@ class ImageVerificationService:
 
 {"**Image Description:** " + image_description if image_description else ""}
 
-**Task:** Analyze the image and determine if it is RELEVANT and APPROPRIATE for this complaint.
+**Task:** Determine if this image is ACCEPTABLE as supporting evidence for this complaint.
 
-**Evaluation Criteria:**
+**ACCEPT the image if ANY of these apply:**
+- It shows anything related to the complaint topic (food photo for food complaint, room photo for room complaint, etc.)
+- It shows the general area, location, or subject mentioned
+- It is a genuine photograph that could reasonably relate to the complaint
+- It shows the type of item/place/issue being complained about, even if the specific problem is not clearly visible
+- It is a real photo taken by a student (not perfect quality is OK)
 
-1. **Relevance** - Does the image show evidence related to the complaint?
-   - Infrastructure/facilities mentioned in complaint
-   - Damage, issues, or problems described
-   - Related location or equipment
+**REJECT the image ONLY if:**
+- It is completely unrelated (e.g., a selfie for a plumbing complaint, a landscape for a food complaint)
+- It is a meme, joke image, or internet screenshot
+- It contains offensive, inappropriate, or abusive content
+- It is clearly a test/dummy/random image
 
-2. **Appropriateness** - Is the image suitable?
-   - Not spam, memes, or unrelated screenshots
-   - Not inappropriate or offensive content
-   - Not a joke or test image
-   - Genuine photo with clear subject
+**IMPORTANT: Be lenient. When in doubt, ACCEPT the image. Students may not capture the exact issue perfectly, and a loosely related photo is still useful context.**
 
-3. **Quality** - Can the issue be seen?
-   - Sufficient clarity to see the problem
-   - Adequate lighting
-   - Focused on the relevant subject
-
-**Your Response:**
 Respond ONLY with valid JSON:
 
 {{
@@ -257,16 +253,6 @@ Respond ONLY with valid JSON:
   "quality_rating": "Good|Fair|Poor",
   "is_appropriate": true/false
 }}
-
-**Examples:**
-
-Complaint: "Broken tap in hostel bathroom"
-Image shows: Damaged faucet with water leaking
-→ {{"is_relevant": true, "confidence": 0.95, "reason": "Image clearly shows broken tap matching complaint"}}
-
-Complaint: "AC not working in lab"
-Image shows: Meme or random screenshot
-→ {{"is_relevant": false, "confidence": 0.9, "reason": "Image is a meme/screenshot, not genuine photo"}}
 
 Analyze the provided image and respond with JSON:"""
         

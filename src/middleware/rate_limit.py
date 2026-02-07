@@ -177,7 +177,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         if role == "Student":
             # Check if it's a complaint submission
-            if "/api/complaints" in request.url.path and request.method == "POST":
+            if request.url.path == "/api/complaints/submit" and request.method == "POST":
                 # 5 complaints per day
                 return (
                     settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY,

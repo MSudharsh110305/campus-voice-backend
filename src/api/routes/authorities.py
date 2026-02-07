@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import get_db  # ✅ FIXED IMPORT
-from src.api.dependencies import (  # ✅ FIXED IMPORT
+from src.api.dependencies import (  # ✅ FIXED IMPORT - use dependencies.get_db for session sharing
+    get_db,
     get_current_authority,
     get_authority_complaint,
 )
@@ -577,12 +577,10 @@ async def escalate_complaint(
                 detail="Authority not found"
             )
         
-        # Find next level authority
-        next_authority = await authority_service.get_escalation_authority(
+        # Find next level authority using actual authority type (not level-based lookup)
+        next_authority = await authority_service.get_escalated_authority(
             db=db,
-            category_id=complaint.category_id,
-            current_level=current_authority.authority_level,
-            department_id=complaint.complaint_department_id
+            current_authority_id=authority_id
         )
         
         if not next_authority:
@@ -600,7 +598,7 @@ async def escalate_complaint(
         complaint.assigned_authority_id = next_authority.id
         complaint.assigned_at = datetime.now(timezone.utc)
         complaint.updated_at = datetime.now(timezone.utc)
-        
+
         # Create status update
         status_update = StatusUpdate(
             complaint_id=complaint_id,
@@ -609,8 +607,11 @@ async def escalate_complaint(
             new_status=complaint.status,
             reason=f"Escalated to {next_authority.name}: {reason}"
         )
-        
+
+        # Explicitly mark complaint as dirty and flush to ensure persistence
+        db.add(complaint)
         db.add(status_update)
+        await db.flush()
         await db.commit()
         
         # ✅ Create notifications

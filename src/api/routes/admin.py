@@ -19,8 +19,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import get_db  # ✅ FIXED IMPORT
-from src.api.dependencies import get_current_admin  # ✅ FIXED IMPORT
+from src.api.dependencies import get_db, get_current_admin  # ✅ FIXED IMPORT
 from src.schemas.authority import (
     AuthorityCreate,
     AuthorityProfile,

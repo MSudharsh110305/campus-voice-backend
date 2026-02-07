@@ -19,8 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import get_db
 from src.api.dependencies import (
+    get_db,
     get_current_student,
     get_current_authority,
     get_complaint_with_ownership,

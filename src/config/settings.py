@@ -144,8 +144,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend URL")
     
     # ==================== ADMIN SETTINGS ====================
-    ADMIN_EMAIL: str = Field(default="admin@campusvoice.edu", description="Admin email")
-    ADMIN_PASSWORD: str = Field(default="Admin@123", min_length=8, description="Admin password")
+    ADMIN_EMAIL: str = Field(default="admin@srec.ac.in", description="Admin email")
+    ADMIN_PASSWORD: str = Field(default="Admin@123456", min_length=8, description="Admin password")
     ADMIN_NAME: str = Field(default="System Administrator", description="Admin name")
     
     # ==================== COMPLAINT SETTINGS ====================

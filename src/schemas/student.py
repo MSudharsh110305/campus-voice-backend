@@ -219,10 +219,12 @@ class StudentProfileUpdate(BaseModel):
 
 class StudentResponse(BaseModel):
     """Schema for student registration/login response"""
-    
+
     roll_no: str
     name: str
     email: str
+    gender: Optional[str] = None
+    stay_type: Optional[str] = None
     year: Optional[int] = None
     department_id: Optional[int] = None
     department_name: Optional[str] = None
