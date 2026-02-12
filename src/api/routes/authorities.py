@@ -431,15 +431,35 @@ async def update_complaint_status(
 ):
     """
     Update complaint status.
-    
+
     - **status**: New status (Raised, In Progress, Resolved, Closed)
     - **reason**: Optional reason for status change
-    
+
     Automatically creates notification for student.
     """
     try:
+        # ✅ NEW: Validate status transition
+        from src.config.constants import VALID_STATUS_TRANSITIONS
+
+        current_status = complaint.status
+        new_status = data.status
+
+        # Check if transition is valid
+        if new_status not in VALID_STATUS_TRANSITIONS.get(current_status, []):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status transition from {current_status} to {new_status}"
+            )
+
+        # ✅ NEW: Check if reason is required for certain status changes
+        if new_status in ("Closed", "Spam") and (not data.reason or not data.reason.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Reason is required when changing status to {new_status}"
+            )
+
         service = ComplaintService(db)
-        
+
         # Update status
         await service.update_complaint_status(
             complaint_id=complaint_id,

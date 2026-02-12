@@ -31,29 +31,32 @@ LOGIN ENDPOINTS ARE SEPARATE:
   Authorities (including Admin) -> POST /api/authorities/login
 
 HOW A COMPLAINT FLOWS:
-  1. Student fills form: SELECTS category (REQUIRED), writes complaint text,
-     optional image. Category selection is MANDATORY but acts as a hint.
+  1. Student fills form: Writes complaint text + chooses visibility (Private/Public).
+     NO CATEGORY SELECTION - AI determines category automatically from text.
+     Optional image can be attached.
   2. Backend sends text to Groq LLM which:
      - Checks for spam/abuse (rejects if spam)
+     - AUTOMATICALLY CATEGORIZES complaint (Men's/Women's Hostel, General, Dept, Disciplinary)
+     - DETECTS TARGET DEPARTMENT from keywords (e.g., "ECE lab" → ECE department)
+     - ENABLES CROSS-DEPARTMENT ROUTING (CSE student → ECE lab → routes to ECE HOD)
      - Decides if image evidence is needed (rejects if needed but missing)
      - Rephrases text into professional language
      - Suggests priority (Low/Medium/High/Critical)
-     - RE-CATEGORIZES the complaint (may override student's selection)
-  3. Backend uses the LLM's FINAL category decision (not necessarily student's
-     choice) to route complaint to the correct authority:
+  3. Backend uses LLM's category + target dept to route to correct authority:
      - Men's Hostel    -> Men's Hostel Warden
      - Women's Hostel  -> Women's Hostel Warden
      - General         -> Admin Officer
-     - Department      -> HOD of student's department
+     - Department      -> HOD of target department (auto-detected, not student's dept)
      - Disciplinary    -> Disciplinary Committee
-  4. Authority sees complaint on their dashboard
-  5. Authority changes status: Raised -> In Progress -> Resolved -> Closed
-  6. Student gets notifications at each status change
-  7. If authority can't handle it, they escalate to next level
+  4. Backend validates: Day Scholars can't submit hostel, gender restrictions apply
+  5. Authority sees complaint on their dashboard
+  6. Authority changes status: Raised -> In Progress -> Resolved -> Closed
+  7. Student gets notifications at each status change
+  8. If authority can't handle it, they escalate to next level
 
-  IMPORTANT: Category selection is a HYBRID system. Student picks from dropdown
-  (REQUIRED field), but LLM can override if it detects a better match. The
-  final stored category is the LLM's decision.
+  IMPORTANT: This is a FULLY AI-DRIVEN system. Students do NOT select category_id.
+  The system analyzes complaint text to determine category, target department, and
+  whether cross-department routing is needed. Backend still enforces business rules.
 
 THE AUTHORITY HIERARCHY (higher number = more power):
   Men's Hostel Warden       (level 5)
@@ -190,10 +193,12 @@ USE THESE EXACT VALUES. Case-sensitive. No alternatives accepted.
   "High"      score 100-199
   "Critical"  score 200+
 
---- VISIBILITY LEVELS ---
+--- VISIBILITY LEVELS (✅ UPDATED: 2 OPTIONS ONLY) ---
   "Private"      only student + assigned authority can see
-  "Department"   same department members + authority can see
-  "Public"       all students (with filtering rules -- see Section 9)
+  "Public"       all students can see (with automatic filtering - see Section 9)
+
+  NOTE: "Department" visibility was REMOVED in the fully AI-driven system.
+  Students now only choose between "Private" and "Public".
 
 --- GENDER ---
   "Male" | "Female" | "Other"
@@ -531,9 +536,11 @@ IMPORTANT FILTERING RULES (backend applies automatically):
   - Female students CANNOT see Men's Hostel complaints
   - ✅ NEW: Inter-department filtering with exceptions:
     * Students can ONLY see complaints from their OWN department
-    * EXCEPTION: General category complaints visible to ALL students
-    * EXCEPTION: Disciplinary Committee complaints visible to ALL students
-    * Example: ECE student sees ECE complaints + General + Disciplinary (NOT CSE/MECH)
+    * EXCEPTION 1: "General" category complaints visible to ALL students
+    * EXCEPTION 2: "Disciplinary Committee" complaints visible to ALL students
+    * EXCEPTION 3: Cross-department complaints visible to TARGET department
+    * Example: ECE student sees (ECE dept + General + Disciplinary)
+    * Example: CSE student complains about "ECE lab" → ECE students CAN see it
 
 PRIVACY: student_roll_no and student_name are ALWAYS null in public feed.
 
@@ -1215,28 +1222,36 @@ SECTION 9: VISIBILITY & PRIVACY RULES
 
 This section explains who can see what. Critical for building the correct UI.
 
---- COMPLAINT VISIBILITY LEVELS ---
+--- COMPLAINT VISIBILITY LEVELS (✅ UPDATED: 2 OPTIONS) ---
 
 When a student submits a complaint, they choose visibility:
   "Private"    -> Only the student who submitted + assigned authority can see
-  "Department" -> Students in same department + assigned authority can see
-  "Public"     -> All students can see (with restrictions below)
+  "Public"     -> All students can see (with automatic filtering below)
+
+  NOTE: "Department" visibility was REMOVED. Only "Private" and "Public" remain.
 
 --- PUBLIC FEED FILTERING (backend auto-applies) ---
 
 When a student calls GET /api/complaints/public-feed, the backend filters:
 
-  1. ONLY "Public" and "Department" visibility complaints are returned
+  1. ONLY "Public" visibility complaints are returned
   2. "Closed" status complaints are HIDDEN
-  3. Day Scholar students CANNOT see Men's Hostel or Women's Hostel complaints
-  4. Male Hostel students CANNOT see Women's Hostel complaints
-  5. Female Hostel students CANNOT see Men's Hostel complaints
-  6. "Department" visibility complaints are only visible to same-department students
+  3. ✅ GENDER-BASED HOSTEL FILTERING:
+     - Day Scholar students CANNOT see ANY hostel complaints
+     - Male Hostel students CANNOT see Women's Hostel complaints
+     - Female Hostel students CANNOT see Men's Hostel complaints
+  4. ✅ INTER-DEPARTMENT FILTERING WITH EXCEPTIONS:
+     - Students ONLY see complaints from their OWN department
+     - EXCEPTION: "General" category complaints visible to ALL
+     - EXCEPTION: "Disciplinary Committee" complaints visible to ALL
+     - EXCEPTION: Cross-department complaints visible to TARGET department
+     - Example: CSE student sees (CSE + General + Disciplinary)
+     - Example: CSE student → "ECE lab" complaint → ECE students see it
 
 FRONTEND IMPACT:
-  - You don't need to filter in frontend -- backend does it
-  - But you should NOT show hostel category filter tabs to Day Scholars
-  - And you should NOT show Women's Hostel tab to Male students (etc.)
+  - Don't show hostel filters to Day Scholars
+  - Don't show Women's Hostel to males, Men's Hostel to females
+  - Public feed is automatically filtered - no client-side filtering needed
 
 --- STUDENT IDENTITY PRIVACY ---
 
@@ -1505,22 +1520,32 @@ FIX: Map string codes to IDs:
   AERO=8, CIVIL=9, IT=10, MBA=11, AIDS=12, MTECH_CSE=13
   Always send department_id as integer in registration and filtering.
 
---- GAP 3: FIVE CATEGORIES, NOT FOUR ---
-OLD: Frontend assumes 4 categories (Hostel, General, Department, Disciplinary)
-NEW: Backend has 5 categories. "Hostel" was split into:
-  1 = Men's Hostel
-  2 = Women's Hostel
-  3 = General
-  4 = Department
-  5 = Disciplinary Committee
-FIX: Update category dropdown to show 5 options. IMPORTANT: Category is
-  REQUIRED from student but LLM may override their choice. Show this note:
-  "Select the category that best fits your complaint. Our AI may adjust it
-  for better routing."
-  Filter dropdown by student profile:
-    Day Scholar       -> hide Men's Hostel and Women's Hostel
-    Male Hostel       -> hide Women's Hostel
-    Female Hostel     -> hide Men's Hostel
+--- GAP 3: NO CATEGORY SELECTION REQUIRED (FULLY AI-DRIVEN) ---
+OLD: Frontend has category dropdown where students select from 4-5 categories
+NEW: Backend uses AI to automatically determine category - NO user input needed
+FIX: **REMOVE THE CATEGORY DROPDOWN ENTIRELY** from complaint submission form.
+
+  Frontend Changes Required:
+  1. ❌ REMOVE: category_id dropdown/selector
+  2. ❌ REMOVE: "Department" from visibility options (only Private/Public)
+  3. ✅ ADD: Instruction text: "Describe your complaint. Our AI will automatically
+     categorize and route it to the appropriate authority."
+  4. ✅ KEEP: original_text textarea (10-2000 chars, required)
+  5. ✅ KEEP: visibility radio (Private/Public only, default Public)
+  6. ✅ KEEP: image upload (optional, max 5MB)
+
+  What the AI Does Automatically:
+  - Analyzes complaint text to determine category
+  - Detects target department from keywords (e.g., "ECE lab" → ECE)
+  - Routes cross-department complaints correctly
+  - Backend still validates (Day Scholars can't submit hostel complaints)
+
+  New Response Fields to Display:
+  - category: "Men's Hostel" (show badge with color)
+  - target_department_code: "CSE" (show if cross_department=true)
+  - cross_department: false (show "Cross-Department" badge if true)
+  - confidence_score: 0.9 (show as percentage: "90% confident")
+  - llm_failed: false (show warning if true: "Auto-categorization unavailable")
 
 --- GAP 4: STATUS VOCABULARY ---
 OLD: Frontend uses "opened", "reviewed", "pending"
@@ -1544,16 +1569,30 @@ ANSWER: The AuthorityStats response includes two fields:
   When implemented: performance_rating will be 0.0-5.0 based on resolution
   speed, complaint volume, and escalation rate.
 
---- GAP 7: COMPLAINT SUBMIT IS MULTIPART, NOT JSON ---
-OLD: Frontend sends complaint as JSON
-NEW: Backend expects multipart/form-data (because of optional image upload)
-FIX: Use FormData() in JavaScript:
-  const fd = new FormData();
-  fd.append('category_id', '1');
-  fd.append('original_text', 'My complaint text...');
-  fd.append('visibility', 'Public');
-  if (imageFile) fd.append('image', imageFile);
-  // Do NOT set Content-Type header -- browser handles it
+--- GAP 7: COMPLAINT SUBMIT IS MULTIPART (NO CATEGORY_ID) ---
+OLD: Frontend sends complaint as JSON with category_id
+NEW: Backend expects multipart/form-data WITHOUT category_id (fully AI-driven)
+FIX: Use FormData() in JavaScript - NO category_id field:
+
+  const formData = new FormData();
+  // ❌ DO NOT append category_id - field is deprecated/ignored
+  formData.append('original_text', 'The ECE lab oscilloscopes are broken...');
+  formData.append('visibility', 'Public');  // Only "Private" or "Public"
+  if (imageFile) formData.append('image', imageFile);  // Optional
+
+  fetch('/api/complaints/submit', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + studentToken },
+    // DO NOT set Content-Type - browser adds multipart boundary automatically
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    console.log('AI Category:', data.category);              // "Department"
+    console.log('Target Dept:', data.target_department_code); // "ECE"
+    console.log('Cross-Dept:', data.cross_department);       // true
+    console.log('Confidence:', data.confidence_score);       // 0.95
+  });
 
 --- GAP 8: IMAGE RETRIEVAL NEEDS AUTH ---
 OLD: Frontend uses <img src="/api/complaints/{id}/image">
@@ -1591,13 +1630,30 @@ SECTION 14: COMPLETE WORKFLOW EXAMPLES
    Body: { roll_no, name, email, password, gender, stay_type, department_id, year }
    Save token from response.
 
-2. Submit complaint:
+2. Submit complaint (✅ NO category_id):
    POST /api/complaints/submit (multipart/form-data)
-   Fields: category_id=1 (student selects from dropdown),
-           original_text="Fan broken in room 204",
-           visibility=Public
-   NOTE: LLM may change the category if it detects a better match
-   Response: { id, status, message, rephrased_text, priority, assigned_authority }
+   Fields: original_text="The Men's Hostel water heater in Block A is broken",
+           visibility=Public,
+           image=<optional file>
+   NOTE: AI automatically determines category from complaint text
+
+   Response includes AI fields:
+   {
+     "id": "uuid-string",
+     "status": "Submitted",
+     "message": "Your complaint has been assigned to Men's Hostel Warden",
+     "rephrased_text": "The water heating system...",
+     "priority": "High",
+     "assigned_authority": "Men's Hostel Warden",
+     "category": "Men's Hostel",                 // ✅ AI-determined
+     "target_department_id": 1,                  // ✅ CSE
+     "target_department_code": "CSE",            // ✅ String code
+     "cross_department": false,                  // ✅ true if cross-dept
+     "llm_failed": false,                        // ✅ keyword fallback flag
+     "confidence_score": 0.95,                   // ✅ AI confidence
+     "has_image": false,
+     "image_verified": false
+   }
 
 3. Browse public feed:
    GET /api/complaints/public-feed?skip=0&limit=20

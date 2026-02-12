@@ -134,6 +134,24 @@ class ComplaintService:
             categorization = await llm_service.categorize_complaint(original_text, context)
             llm_failed = False
 
+            # ✅ NEW: Validate hostel category against student profile
+            ai_category = categorization.get("category")
+            if ai_category in ("Men's Hostel", "Women's Hostel"):
+                # Check stay type - Day scholars cannot submit hostel complaints
+                if student.stay_type == "Day Scholar":
+                    raise ValueError("Day scholars cannot submit hostel complaints")
+
+                # Check gender restrictions
+                if ai_category == "Men's Hostel" and student.gender == "Female":
+                    raise ValueError(
+                        "Female students should use Women's Hostel category for hostel complaints"
+                    )
+
+                if ai_category == "Women's Hostel" and student.gender == "Male":
+                    raise ValueError(
+                        "Male students should use Men's Hostel category for hostel complaints"
+                    )
+
             # 3. Rephrase for professionalism
             rephrased_text = await llm_service.rephrase_complaint(original_text)
 
