@@ -165,12 +165,12 @@ Categories (choose EXACTLY ONE):
 5. **Disciplinary Committee** - Ragging, harassment, bullying, threats, violence, abuse, serious misconduct, safety concerns.
 
 STRICT CATEGORIZATION RULES:
-- If Residence Type is "Day Scholar", NEVER choose "Men's Hostel" or "Women's Hostel". Use "General" for any facility complaint instead.
-- If Gender is "Male" and complaint is about hostel, choose "Men's Hostel".
-- If Gender is "Female" and complaint is about hostel, choose "Women's Hostel".
+- If Gender is "Male" and complaint is about hostel facilities/issues, choose "Men's Hostel".
+- If Gender is "Female" and complaint is about hostel facilities/issues, choose "Women's Hostel".
 - "General" = physical infrastructure and materialistic issues on campus (NOT academic, NOT hostel).
 - "Department" = academic, faculty, lab, classroom, course-related issues.
 - Only use "Disciplinary Committee" for serious safety/harassment/ragging issues.
+- Categorize based on complaint content, not student eligibility (validation happens separately).
 
 DEPARTMENT DETECTION (Analyze complaint text for department keywords):
 Valid Departments: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
@@ -278,13 +278,12 @@ JSON Response:"""
             selected_category = "General"
 
         # Map generic "Hostel" to gender-specific category using student context
+        # ✅ FIXED: Don't pre-filter by stay_type - let validation in complaint_service reject invalid submissions
         if selected_category == "Hostel":
             if context:
-                stay_type = context.get("stay_type", "")
                 gender = context.get("gender", "")
-                if stay_type == "Day Scholar":
-                    selected_category = "General"
-                elif gender == "Female":
+                # Map to gender-specific hostel category (validation will reject if Day Scholar)
+                if gender == "Female":
                     selected_category = "Women's Hostel"
                 else:
                     selected_category = "Men's Hostel"
