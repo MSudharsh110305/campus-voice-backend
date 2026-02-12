@@ -47,3 +47,15 @@ htmlcov/
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Claude Code & Prompts
+prompts/
+.claude/
+
+# Test files & outputs
+test_render.py
+test_output.txt
+TEST_SUMMARY.md
+
+# Documentation (keep only API_REFERENCE.txt)
+BACKEND_OVERVIEW.txt

@@ -111,16 +111,26 @@ class LLMService:
             if not self._validate_categorization_result(result):
                 logger.warning("Invalid categorization result, using fallback")
                 return self._fallback_categorization(text, context)
-            
+
+            # Ensure target_department is present (fallback to student's department)
+            if "target_department" not in result or not result["target_department"]:
+                result["target_department"] = context.get("department", "CSE")
+                logger.info(f"No target_department in LLM response, using student's department: {result['target_department']}")
+
+            # Ensure confidence is present
+            if "confidence" not in result:
+                result["confidence"] = 0.8  # Default confidence for successful LLM response
+
             # Add metadata
             result["tokens_used"] = response.usage.total_tokens
             result["processing_time_ms"] = int(processing_time)
             result["model"] = self.model
             result["status"] = "Success"
-            
+
             logger.info(
                 f"Categorization successful: {result['category']} "
-                f"(Priority: {result['priority']}, Tokens: {result['tokens_used']})"
+                f"(Priority: {result['priority']}, Target Dept: {result['target_department']}, "
+                f"Confidence: {result.get('confidence', 'N/A')}, Tokens: {result['tokens_used']})"
             )
             return result
             
@@ -132,12 +142,12 @@ class LLMService:
             return self._fallback_categorization(text, context)
     
     def _build_categorization_prompt(self, text: str, context: Dict[str, str]) -> str:
-        """Build prompt for categorization"""
+        """Build prompt for categorization with department detection"""
         gender = context.get('gender', 'Unknown')
         stay_type = context.get('stay_type', 'Unknown')
         department = context.get('department', 'Unknown')
 
-        return f"""You are a complaint categorization system for SREC college campus.
+        return f"""You are a complaint categorization and department routing system for SREC college campus.
 
 Student Profile:
 - Gender: {gender}
@@ -154,13 +164,25 @@ Categories (choose EXACTLY ONE):
 4. **Department** - Academic and department-specific: lab equipment, classroom issues, faculty/teaching concerns, timetable, curriculum, exam issues, project/internship, department infrastructure.
 5. **Disciplinary Committee** - Ragging, harassment, bullying, threats, violence, abuse, serious misconduct, safety concerns.
 
-STRICT RULES (you MUST follow these):
+STRICT CATEGORIZATION RULES:
 - If Residence Type is "Day Scholar", NEVER choose "Men's Hostel" or "Women's Hostel". Use "General" for any facility complaint instead.
 - If Gender is "Male" and complaint is about hostel, choose "Men's Hostel".
 - If Gender is "Female" and complaint is about hostel, choose "Women's Hostel".
 - "General" = physical infrastructure and materialistic issues on campus (NOT academic, NOT hostel).
 - "Department" = academic, faculty, lab, classroom, course-related issues.
 - Only use "Disciplinary Committee" for serious safety/harassment/ragging issues.
+
+DEPARTMENT DETECTION (Analyze complaint text for department keywords):
+Valid Departments: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
+
+Rules:
+- If complaint mentions specific department keywords (e.g., "ECE lab", "mechanical workshop", "CSE faculty"), set target_department to that department code
+- If no specific department mentioned, use student's department ({department})
+- For cross-department complaints (student from one dept complaining about another), target the mentioned department
+- Examples:
+  * "The ECE lab equipment is broken" from CSE student → target_department: "ECE"
+  * "Our classroom projector is not working" from ECE student → target_department: "ECE"
+  * "The mechanical workshop is too noisy" from CSE student → target_department: "MECH"
 
 Priority Levels:
 - **Low**: Minor inconvenience, cosmetic issues
@@ -171,8 +193,10 @@ Priority Levels:
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
   "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
+  "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE",
   "priority": "Low|Medium|High|Critical",
   "reasoning": "Brief explanation (max 50 words)",
+  "confidence": 0.0-1.0,
   "is_against_authority": false,
   "requires_image": false
 }}
@@ -229,7 +253,7 @@ JSON Response:"""
         return True
     
     def _fallback_categorization(self, text: str, context: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Fallback categorization using keyword matching with student context"""
+        """Fallback categorization using keyword matching with student context and department detection"""
         text_lower = text.lower()
 
         # Keyword-based categorization
@@ -267,6 +291,33 @@ JSON Response:"""
             else:
                 selected_category = "Men's Hostel"
 
+        # ✅ NEW: Department detection using keywords
+        department_keywords = {
+            "CSE": ["cse", "computer science", "computer lab", "cs department"],
+            "ECE": ["ece", "electronics", "communication", "ec department"],
+            "MECH": ["mech", "mechanical", "workshop", "machine"],
+            "CIVIL": ["civil", "construction", "surveying"],
+            "EEE": ["eee", "electrical", "power", "circuits"],
+            "IT": ["it", "information technology", "it lab"],
+            "BIO": ["bio", "biomedical", "biomed"],
+            "AERO": ["aero", "aeronautical", "aerospace"],
+            "RAA": ["raa", "robotics", "automation"],
+            "EIE": ["eie", "instrumentation"],
+            "MBA": ["mba", "management"],
+            "AIDS": ["aids", "ai", "data science", "artificial intelligence"],
+            "MTECH_CSE": ["mtech", "m.tech"]
+        }
+
+        # Detect target department from complaint text
+        detected_department = None
+        for dept_code, keywords in department_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                detected_department = dept_code
+                break
+
+        # Fallback to student's department if no department detected
+        target_department = detected_department or (context.get("department", "CSE") if context else "CSE")
+
         # Determine priority based on urgency keywords
         urgency_keywords = {
             "Critical": ["emergency", "urgent", "immediate", "critical", "dangerous", "unsafe"],
@@ -281,12 +332,17 @@ JSON Response:"""
                 selected_priority = priority
                 break
 
-        logger.info(f"Fallback categorization: {selected_category} (Priority: {selected_priority})")
+        logger.info(
+            f"Fallback categorization: {selected_category} (Priority: {selected_priority}, "
+            f"Target Dept: {target_department})"
+        )
 
         return {
             "category": selected_category,
+            "target_department": target_department,
             "priority": selected_priority,
             "reasoning": "Keyword-based categorization (LLM fallback)",
+            "confidence": 0.5,  # Lower confidence for fallback
             "is_against_authority": any(word in text_lower for word in ["faculty", "teacher", "professor", "staff", "warden", "hod"]),
             "requires_image": any(word in text_lower for word in ["broken", "damaged", "leaking", "dirty"]),
             "status": "Fallback"

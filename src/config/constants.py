@@ -158,10 +158,10 @@ PRIORITY_AUTO_ESCALATE_THRESHOLD: float = 150.0
 # ==================== VISIBILITY LEVELS ====================
 
 class VisibilityLevel(str, Enum):
-    """Complaint visibility enums"""
+    """Complaint visibility enums (✅ UPDATED: Department removed)"""
     PRIVATE = "Private"
-    DEPARTMENT = "Department"
     PUBLIC = "Public"
+    # ✅ REMOVED: DEPARTMENT = "Department" (no longer supported in fully AI-driven system)
 
 
 # ==================== STUDENT ENUMS ====================

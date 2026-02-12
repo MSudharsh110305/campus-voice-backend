@@ -56,46 +56,48 @@ router = APIRouter(prefix="/complaints", tags=["Complaints"])
     "/submit",
     response_model=ComplaintSubmitResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Submit complaint",
-    description="Submit a new complaint with LLM processing and optional image"
+    summary="Submit complaint (fully AI-driven)",
+    description="Submit a new complaint - category and department are automatically determined by AI"
 )
 async def create_complaint(
-    category_id: int = Form(..., description="Complaint category ID"),
     original_text: str = Form(..., min_length=10, max_length=2000, description="Complaint text"),
-    visibility: str = Form(default="Public", description="Visibility level"),
+    visibility: str = Form(default="Public", description="Visibility level (Public or Private)"),
     image: Optional[UploadFile] = File(None, description="Optional complaint image"),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    ✅ UPDATED: Submit a new complaint with LLM-driven image requirement check.
+    ✅ FULLY AI-DRIVEN: Submit a new complaint without selecting category.
 
-    The complaint will be:
-    - Checked for spam/abusive content (rejected if spam)
-    - Analyzed to determine if image is REQUIRED
-    - Rejected if required image is missing
-    - Categorized using AI
-    - Rephrased for professionalism
-    - Routed to appropriate authority
-    - Prioritized based on content
-    - Image verified if provided
+    The system automatically:
+    - Analyzes complaint text using AI to determine category
+    - Detects target department from complaint content
+    - Routes cross-department complaints correctly
+    - Checks for spam/abusive content (rejected if spam)
+    - Determines if image is REQUIRED based on complaint type
+    - Rephrases text for professionalism
+    - Routes to appropriate authority
+    - Prioritizes based on content
+    - Verifies image if provided
 
     **Important**:
+    - NO category selection required - AI determines it
     - Spam/abusive complaints are rejected outright (HTTP 400)
     - Some complaints require images based on AI analysis
     - If image is required but not provided, complaint is rejected (HTTP 400)
+    - Visibility options: "Public" or "Private" only
 
     **Multipart form data required if image is uploaded**
     """
     try:
         service = ComplaintService(db)
 
+        # ✅ UPDATED: No category_id parameter - fully AI-driven
         result = await service.create_complaint(
             student_roll_no=roll_no,
-            category_id=category_id,
             original_text=original_text,
             visibility=visibility,
-            image_file=image  # ✅ NEW: Pass image file
+            image_file=image
         )
 
         return ComplaintSubmitResponse(**result)
@@ -185,20 +187,28 @@ async def get_complaints(
         limit=limit
     )
 
-    # Count using same visibility logic
+    # Count using same visibility logic (✅ UPDATED: Only Public)
     from src.database.models import ComplaintCategory
     count_conditions = [
-        Complaint.visibility.in_(["Public", "Department"]),
+        Complaint.visibility == "Public",
         Complaint.status != "Closed"
     ]
 
     # Get hostel category IDs for filtering
     mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
     womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
+    general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
+    disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
+
     mens_hostel_result = await db.execute(mens_hostel_query)
     womens_hostel_result = await db.execute(womens_hostel_query)
+    general_result = await db.execute(general_query)
+    disciplinary_result = await db.execute(disciplinary_query)
+
     mens_hostel_id = mens_hostel_result.scalar()
     womens_hostel_id = womens_hostel_result.scalar()
+    general_id = general_result.scalar()
+    disciplinary_id = disciplinary_result.scalar()
 
     # Hide hostel complaints based on stay type and gender
     if student.stay_type == "Day Scholar":
@@ -213,12 +223,16 @@ async def get_complaints(
         elif student.gender == "Female" and mens_hostel_id:
             count_conditions.append(Complaint.category_id != mens_hostel_id)
 
-    count_conditions.append(
-        or_(
-            Complaint.complaint_department_id == student.department_id,
-            Complaint.is_cross_department == False
-        )
-    )
+    # ✅ UPDATED: Inter-department filtering (General and Disciplinary visible to all)
+    inter_dept_conditions = [
+        Complaint.complaint_department_id == student.department_id
+    ]
+    if general_id:
+        inter_dept_conditions.append(Complaint.category_id == general_id)
+    if disciplinary_id:
+        inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+
+    count_conditions.append(or_(*inter_dept_conditions))
 
     count_query = select(func.count()).select_from(Complaint).where(and_(*count_conditions))
     result = await db.execute(count_query)

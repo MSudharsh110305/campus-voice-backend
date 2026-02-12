@@ -15,14 +15,17 @@ from src.config.constants import ComplaintStatus, PriorityLevel, VisibilityLevel
 
 
 class ComplaintCreate(BaseModel):
-    """Schema for creating a complaint"""
-    
-    category_id: int = Field(
-        ...,
+    """Schema for creating a complaint (✅ FULLY AI-DRIVEN - no category_id required)"""
+
+    # ✅ REMOVED: category_id is NO LONGER required - determined by AI
+    # Kept as optional for backward compatibility, but ignored by backend
+    category_id: Optional[int] = Field(
+        None,
         gt=0,
-        description="Complaint category ID",
+        description="[DEPRECATED] Category is now auto-determined by AI. This field is ignored.",
         examples=[1]
     )
+
     original_text: str = Field(
         ...,
         min_length=10,
@@ -32,12 +35,12 @@ class ComplaintCreate(BaseModel):
     )
     visibility: Optional[VisibilityLevel] = Field(
         default="Public",
-        description="Complaint visibility level"
+        description="Complaint visibility level (Public or Private only)"
     )
-    
+
     # ✅ Image is handled separately via multipart/form-data
     # No image_url field here
-    
+
     @field_validator('original_text')
     @classmethod
     def validate_text(cls, v: str) -> str:
@@ -48,11 +51,18 @@ class ComplaintCreate(BaseModel):
         if v.isupper():
             raise ValueError("Please avoid writing in all caps")
         return v
-    
+
+    @field_validator('visibility')
+    @classmethod
+    def validate_visibility(cls, v: Optional[str]) -> Optional[str]:
+        """Validate visibility is only Public or Private"""
+        if v and v not in ["Public", "Private"]:
+            raise ValueError("Visibility must be either 'Public' or 'Private'. 'Department' is no longer supported.")
+        return v
+
     model_config = {
         "json_schema_extra": {
             "example": {
-                "category_id": 1,
                 "original_text": "The hostel room fan is not working for the past 3 days. It's very hot and difficult to sleep.",
                 "visibility": "Public"
             }
@@ -234,7 +244,7 @@ class ComplaintDetailResponse(ComplaintResponse):
 
 
 class ComplaintSubmitResponse(BaseModel):
-    """Schema for complaint submission response"""
+    """Schema for complaint submission response (✅ UPDATED: AI-driven fields)"""
 
     id: UUID
     status: str
@@ -243,13 +253,41 @@ class ComplaintSubmitResponse(BaseModel):
     priority: str
     assigned_authority: Optional[str] = None
 
-    # ✅ NEW: Image processing results
+    # ✅ NEW: AI-driven categorization results
+    category: Optional[str] = Field(
+        None,
+        description="AI-determined category"
+    )
+    target_department_id: Optional[int] = Field(
+        None,
+        description="AI-determined target department ID"
+    )
+    target_department_code: Optional[str] = Field(
+        None,
+        description="AI-determined target department code"
+    )
+    cross_department: bool = Field(
+        default=False,
+        description="Whether complaint targets a different department than student's"
+    )
+    llm_failed: bool = Field(
+        default=False,
+        description="Whether LLM analysis failed (fallback used)"
+    )
+    confidence_score: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="AI confidence score (0.0-1.0)"
+    )
+
+    # ✅ Image processing results
     has_image: bool = False
     image_verified: bool = False
     image_verification_status: Optional[str] = None
     image_verification_message: Optional[str] = None
 
-    # ✅ NEW: Image requirement information
+    # ✅ Image requirement information
     image_was_required: bool = Field(
         default=False,
         description="Whether image was required by LLM for this complaint"
@@ -268,6 +306,12 @@ class ComplaintSubmitResponse(BaseModel):
                 "rephrased_text": "Issue: The ceiling fan in my hostel room...",
                 "priority": "Medium",
                 "assigned_authority": "Hostel Warden",
+                "category": "Men's Hostel",
+                "target_department_id": 1,
+                "target_department_code": "CSE",
+                "cross_department": False,
+                "llm_failed": False,
+                "confidence_score": 0.95,
                 "has_image": True,
                 "image_verified": True,
                 "image_verification_status": "Verified",

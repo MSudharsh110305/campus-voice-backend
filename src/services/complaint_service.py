@@ -39,27 +39,26 @@ class ComplaintService:
     async def create_complaint(
         self,
         student_roll_no: str,
-        category_id: int,
         original_text: str,
         visibility: str = "Public",
-        image_file: Optional[UploadFile] = None  # ✅ NEW: Accept UploadFile
+        image_file: Optional[UploadFile] = None  # ✅ Accept UploadFile
     ) -> Dict[str, Any]:
         """
-        Create a new complaint with full LLM processing and optional image.
+        Create a new complaint with FULL AI-DRIVEN processing (no category_id required).
 
-        ✅ UPDATED: Accepts image_file (UploadFile) instead of image_url
+        ✅ UPDATED: category_id is NO LONGER a parameter - determined by LLM
+        ✅ UPDATED: target_department_id is determined by LLM analysis
         ✅ UPDATED: Implements spam rejection (doesn't create complaint if spam)
         ✅ UPDATED: Enforces image requirement via LLM
 
         Args:
             student_roll_no: Student roll number
-            category_id: Category ID
             original_text: Original complaint text
-            visibility: Visibility level (Public, Private, Anonymous)
+            visibility: Visibility level (Public or Private)
             image_file: Optional uploaded image file
 
         Returns:
-            Dictionary with complaint details and image verification results
+            Dictionary with complaint details, AI analysis results, and image verification
 
         Raises:
             ValueError: If spam detected or required image missing
@@ -86,15 +85,8 @@ class ComplaintService:
             logger.warning(f"Blacklisted user {student_roll_no} attempted to create complaint")
             raise ValueError(error_msg)
 
-        # Validate category vs student profile
-        category_obj = await self.db.get(ComplaintCategory, category_id)
-        if category_obj and category_obj.name in ("Men's Hostel", "Women's Hostel"):
-            if student.stay_type == "Day Scholar":
-                raise ValueError("Day scholars cannot submit hostel complaints. Please choose a different category.")
-            if category_obj.name == "Men's Hostel" and student.gender == "Female":
-                raise ValueError("Female students should use the Women's Hostel category.")
-            if category_obj.name == "Women's Hostel" and student.gender == "Male":
-                raise ValueError("Male students should use the Men's Hostel category.")
+        # ✅ REMOVED: Category validation - now done by LLM
+        # Category and department are determined via AI analysis below
 
         # Build context for LLM
         context = {
@@ -138,8 +130,9 @@ class ComplaintService:
                 # ✅ CRITICAL: Raise error (don't create complaint)
                 raise ValueError(error_msg)
 
-            # 2. Categorize and get priority
+            # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
             categorization = await llm_service.categorize_complaint(original_text, context)
+            llm_failed = False
 
             # 3. Rephrase for professionalism
             rephrased_text = await llm_service.rephrase_complaint(original_text)
@@ -169,13 +162,17 @@ class ComplaintService:
             # Fallback values
             categorization = {
                 "category": "General",
+                "target_department": context.get("department", "CSE"),
                 "priority": "Medium",
+                "confidence": 0.5,
                 "is_against_authority": False
             }
             rephrased_text = original_text
             image_requirement = {"image_required": False}
-        
-        # Map category name to ID (if LLM returned name instead of ID)
+            llm_failed = True
+
+        # ✅ UPDATED: Map category name to ID
+        category_id = None
         if "category" in categorization:
             category_query = select(ComplaintCategory.id).where(
                 ComplaintCategory.name == categorization['category']
@@ -184,6 +181,25 @@ class ComplaintService:
             category_row = category_result.first()
             if category_row:
                 category_id = category_row[0]
+            else:
+                # Fallback to General category
+                logger.warning(f"Category '{categorization['category']}' not found, using General")
+                general_query = select(ComplaintCategory.id).where(
+                    ComplaintCategory.name == "General"
+                )
+                general_result = await self.db.execute(general_query)
+                general_row = general_result.first()
+                category_id = general_row[0] if general_row else 3  # Fallback to ID 3
+
+        # ✅ NEW: Map department code to department ID
+        from src.database.models import Department
+        target_department_code = categorization.get("target_department", context.get("department", "CSE"))
+        dept_query = select(Department.id).where(
+            Department.code == target_department_code
+        )
+        dept_result = await self.db.execute(dept_query)
+        dept_row = dept_result.first()
+        target_department_id = dept_row[0] if dept_row else student.department_id  # Fallback to student's department
 
         # Calculate initial priority score
         priority = categorization.get("priority", "Medium")
@@ -223,7 +239,7 @@ class ComplaintService:
                 # Continue without image
                 image_bytes = None
         
-        # ✅ UPDATED: Create complaint (spam is rejected, so no spam fields needed)
+        # ✅ UPDATED: Create complaint with AI-determined category and target department
         complaint = await self.complaint_repo.create(
             student_roll_no=student_roll_no,
             category_id=category_id,
@@ -235,7 +251,7 @@ class ComplaintService:
             status=initial_status,
             is_marked_as_spam=False,  # Spam complaints are rejected, never created
             spam_reason=None,
-            complaint_department_id=student.department_id,
+            complaint_department_id=target_department_id,  # ✅ CHANGED: Use AI-detected department
             # ✅ NEW: Binary image fields
             image_data=image_bytes,
             image_mimetype=image_mimetype,
@@ -274,13 +290,13 @@ class ComplaintService:
                 logger.error(f"Image verification error: {e}")
                 image_verification_message = f"Verification error: {str(e)}"
         
-        # ✅ UPDATED: Route to appropriate authority (spam is already rejected)
+        # ✅ UPDATED: Route to appropriate authority using target department
         authority = None
         try:
             authority = await authority_service.route_complaint(
                 self.db,
                 category_id,
-                student.department_id,
+                target_department_id,  # ✅ CHANGED: Use AI-detected target department
                 categorization.get("is_against_authority", False)
             )
 
@@ -310,8 +326,11 @@ class ComplaintService:
         logger.info(
             f"Complaint {complaint.id} created successfully - "
             f"Status: {initial_status}, Priority: {priority}, "
+            f"Category: {categorization.get('category')}, "
+            f"Target Dept: {target_department_code}, "
             f"Has Image: {image_bytes is not None}, "
-            f"Image Required: {image_requirement.get('image_required', False)}"
+            f"Image Required: {image_requirement.get('image_required', False)}, "
+            f"LLM Failed: {llm_failed}"
         )
 
         return {
@@ -325,14 +344,21 @@ class ComplaintService:
             "assigned_authority_id": authority.id if authority else None,
             "created_at": current_time.isoformat(),
             "message": "Complaint submitted successfully",
-            # ✅ NEW: Image information
+            # ✅ NEW: AI-driven categorization information
+            "category": categorization.get("category"),
+            "target_department_id": target_department_id,
+            "target_department_code": target_department_code,
+            "cross_department": target_department_id != student.department_id,
+            "llm_failed": llm_failed,
+            "confidence_score": categorization.get("confidence", 0.8),
+            # ✅ Image information
             "has_image": image_bytes is not None,
             "image_verified": image_verified,
             "image_verification_status": image_verification_status,
             "image_verification_message": image_verification_message,
             "image_filename": image_filename,
             "image_size": image_size,
-            # ✅ NEW: Image requirement information
+            # ✅ Image requirement information
             "image_was_required": image_requirement.get("image_required", False),
             "image_requirement_reasoning": image_requirement.get("reasoning")
         }
