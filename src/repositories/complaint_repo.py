@@ -315,8 +315,9 @@ class ComplaintRepository(BaseRepository[Complaint]):
         mens_hostel_id = mens_hostel_result.scalar()
         womens_hostel_id = womens_hostel_result.scalar()
 
+        # ✅ UPDATED: Only Public visibility (Department removed)
         conditions = [
-            Complaint.visibility.in_(["Public", "Department"]),
+            Complaint.visibility == "Public",
             Complaint.status != "Closed"
         ]
 
@@ -336,13 +337,28 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 conditions.append(Complaint.category_id != mens_hostel_id)
             # For "Other" gender, show both hostel categories
 
-        # Hide inter-department complaints
-        conditions.append(
-            or_(
-                Complaint.complaint_department_id == student_department_id,
-                Complaint.is_cross_department == False
-            )
-        )
+        # ✅ UPDATED: Inter-department filtering with General/Disciplinary exception
+        # Get General and Disciplinary Committee category IDs
+        general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
+        disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
+        general_result = await self.session.execute(general_query)
+        disciplinary_result = await self.session.execute(disciplinary_query)
+        general_id = general_result.scalar()
+        disciplinary_id = disciplinary_result.scalar()
+
+        # Students can see:
+        # 1. Complaints from their own department
+        # 2. General category complaints (visible to all)
+        # 3. Disciplinary Committee complaints (visible to all)
+        inter_dept_conditions = [
+            Complaint.complaint_department_id == student_department_id
+        ]
+        if general_id:
+            inter_dept_conditions.append(Complaint.category_id == general_id)
+        if disciplinary_id:
+            inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+
+        conditions.append(or_(*inter_dept_conditions))
 
         query = (
             select(Complaint)
