@@ -26,6 +26,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/openapi.json",
     ]
+
+    # Route patterns exempt from rate limiting (voting, profile viewing, etc.)
+    EXEMPT_PATTERNS = [
+        "/api/complaints/",  # GET endpoints for viewing complaints
+        "/api/students/profile",  # Profile viewing
+        "/api/complaints/public-feed",  # Feed viewing
+    ]
     
     def __init__(self, app, enabled: bool = True):
         """
@@ -133,14 +140,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _is_exempt_route(self, path: str) -> bool:
         """
         Check if route is exempt from rate limiting.
-        
+
         Args:
             path: Request path
-        
+
         Returns:
             True if exempt
         """
-        return path in self.EXEMPT_ROUTES
+        # Check exact matches
+        if path in self.EXEMPT_ROUTES:
+            return True
+
+        # Check pattern matches (GET requests to viewing endpoints)
+        # ✅ Exempt voting endpoints
+        if "/vote" in path:
+            return True
+
+        # ✅ Exempt GET requests (only rate limit POST for complaint submission)
+        # This is handled in _get_rate_limit_for_user by only applying limits to specific POST routes
+        return False
     
     def _get_user_identifier(self, request: Request) -> str:
         """
@@ -166,37 +184,34 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _get_rate_limit_for_user(self, request: Request) -> tuple:
         """
         Get rate limit configuration for user.
-        
+
         Args:
             request: FastAPI request
-        
+
         Returns:
-            Tuple of (max_requests, window_seconds) or None
+            Tuple of (max_requests, window_seconds) or None (if no limit)
         """
         role = getattr(request.state, "role", None)
-        
+
         if role == "Student":
-            # Check if it's a complaint submission
+            # ✅ FIXED: Only rate limit complaint submission (not voting or viewing)
             if request.url.path == "/api/complaints/submit" and request.method == "POST":
-                # 5 complaints per day
+                # 5 complaints per day (includes image uploads)
                 return (
                     settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY,
                     86400  # 24 hours
                 )
-            # General API access
-            return (
-                settings.RATE_LIMIT_STUDENT_API_PER_HOUR,
-                3600  # 1 hour
-            )
-        
+
+            # ✅ REMOVED: General API rate limiting for students
+            # Students can freely view, vote, and interact without rate limits
+            return None
+
         elif role in ["Authority", "Admin"]:
-            return (
-                settings.RATE_LIMIT_AUTHORITY_API_PER_HOUR,
-                3600
-            )
-        
+            # Authorities/Admins not rate limited
+            return None
+
         else:
-            # Unauthenticated requests - global rate limit
+            # Unauthenticated requests - global rate limit (login, registration)
             return (
                 settings.RATE_LIMIT_GLOBAL_PER_MINUTE,
                 60

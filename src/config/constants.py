@@ -352,6 +352,7 @@ MAX_IMAGE_WIDTH: int = 4096
 MAX_IMAGE_HEIGHT: int = 4096
 IMAGE_QUALITY: int = 85
 MAX_IMAGE_SIZE_MB: int = 5
+MAX_IMAGES_PER_COMPLAINT: int = 2  # ✅ NEW: Maximum images per complaint
 
 THUMBNAIL_SIZES: Dict[str, tuple] = {
     "small": (150, 150),
@@ -673,6 +674,7 @@ __all__ = [
     "MAX_IMAGE_HEIGHT",
     "IMAGE_QUALITY",
     "MAX_IMAGE_SIZE_MB",
+    "MAX_IMAGES_PER_COMPLAINT",  # ✅ ADD THIS
     "SESSION_TIMEOUT_MINUTES",
     "TOKEN_EXPIRATION_SECONDS",
     "CROSS_DEPARTMENT_AUTHORITY",

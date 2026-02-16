@@ -278,11 +278,12 @@ JSON Response:"""
             selected_category = "General"
 
         # Map generic "Hostel" to gender-specific category using student context
-        # ✅ FIXED: Don't pre-filter by stay_type - let validation in complaint_service reject invalid submissions
+        # ✅ CRITICAL FIX: Map by gender ONLY - don't check stay_type here
+        # Validation in complaint_service will reject Day Scholar hostel complaints
         if selected_category == "Hostel":
             if context:
                 gender = context.get("gender", "")
-                # Map to gender-specific hostel category (validation will reject if Day Scholar)
+                # Map to gender-specific hostel category based on gender alone
                 if gender == "Female":
                     selected_category = "Women's Hostel"
                 else:
