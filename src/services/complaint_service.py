@@ -88,6 +88,33 @@ class ComplaintService:
         # ✅ REMOVED: Category validation - now done by LLM
         # Category and department are determined via AI analysis below
 
+        # ✅ FIX: Pre-check for cross-gender hostel complaints BEFORE LLM call.
+        # The LLM re-categorizes based on student gender, so a Female student's
+        # complaint about "men's hostel" would silently become a Women's Hostel
+        # complaint. We must reject these explicitly.
+        original_lower = original_text.lower()
+        if student.stay_type == "Day Scholar":
+            # Day scholars cannot report hostel complaints at all
+            mens_kw = ["men's hostel", "mens hostel", "boys hostel", "male hostel",
+                       "women's hostel", "womens hostel", "girls hostel", "female hostel"]
+            if any(kw in original_lower for kw in mens_kw):
+                # Hostel-related text for a day scholar - let LLM categorize; validation will reject
+                pass  # handled by post-LLM validation
+        elif student.gender == "Female":
+            # Female hostel student should not report about men's hostel
+            mens_hostel_kw = ["men's hostel", "mens hostel", "boys hostel", "male hostel", "men hostel"]
+            if any(kw in original_lower for kw in mens_hostel_kw):
+                raise ValueError(
+                    "Female students cannot submit complaints about men's hostel facilities"
+                )
+        elif student.gender == "Male":
+            # Male hostel student should not report about women's hostel
+            womens_hostel_kw = ["women's hostel", "womens hostel", "girls hostel", "female hostel", "ladies hostel"]
+            if any(kw in original_lower for kw in womens_hostel_kw):
+                raise ValueError(
+                    "Male students cannot submit complaints about women's hostel facilities"
+                )
+
         # Build context for LLM
         context = {
             "gender": student.gender or "Unknown",
@@ -134,8 +161,27 @@ class ComplaintService:
             categorization = await llm_service.categorize_complaint(original_text, context)
             llm_failed = False
 
-            # ✅ NEW: Validate hostel category against student profile
+            # ✅ FIX: If hostel student submits hostel-related complaint but LLM
+            # miscategorized it (e.g., as "General"), force-correct the category.
+            # This prevents day scholars from seeing hostel complaints in public feed.
             ai_category = categorization.get("category")
+            HOSTEL_KEYWORDS = [
+                "hostel", "room", "mess", "warden", "dorm", "bed", "bathroom",
+                "water supply", "electricity", "ac", "fan", "toilet", "shower",
+                "dining", "laundry", "curfew", "common room", "bunk"
+            ]
+            if (student.stay_type == "Hostel" and
+                    ai_category not in ("Men's Hostel", "Women's Hostel") and
+                    any(kw in original_text.lower() for kw in HOSTEL_KEYWORDS)):
+                corrected = "Women's Hostel" if student.gender == "Female" else "Men's Hostel"
+                logger.info(
+                    f"LLM miscategorized hostel complaint as '{ai_category}' for hostel "
+                    f"student {student_roll_no}. Correcting to '{corrected}'."
+                )
+                categorization["category"] = corrected
+                ai_category = corrected
+
+            # Validate hostel category against student profile
             if ai_category in ("Men's Hostel", "Women's Hostel"):
                 # Check stay type - Day scholars cannot submit hostel complaints
                 if student.stay_type == "Day Scholar":

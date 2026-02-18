@@ -194,15 +194,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         role = getattr(request.state, "role", None)
 
         if role == "Student":
-            # ✅ FIXED: Only rate limit complaint submission (not voting or viewing)
+            # Only rate limit complaint submission (not voting or viewing)
             if request.url.path == "/api/complaints/submit" and request.method == "POST":
-                # 5 complaints per day (includes image uploads)
+                # 5 complaints per day
                 return (
                     settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY,
                     86400  # 24 hours
                 )
 
-            # ✅ REMOVED: General API rate limiting for students
             # Students can freely view, vote, and interact without rate limits
             return None
 

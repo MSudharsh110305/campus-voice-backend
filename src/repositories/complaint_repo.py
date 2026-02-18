@@ -307,6 +307,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
         Returns:
             List of complaints
         """
+        from src.database.models import Student
+
         # Get category IDs for hostel categories
         mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
         womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
@@ -315,18 +317,56 @@ class ComplaintRepository(BaseRepository[Complaint]):
         mens_hostel_id = mens_hostel_result.scalar()
         womens_hostel_id = womens_hostel_result.scalar()
 
+        # Get General and Disciplinary Committee category IDs
+        general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
+        disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
+        general_result = await self.session.execute(general_query)
+        disciplinary_result = await self.session.execute(disciplinary_query)
+        general_id = general_result.scalar()
+        disciplinary_id = disciplinary_result.scalar()
+
         # ✅ UPDATED: Only Public visibility (Department removed)
         conditions = [
             Complaint.visibility == "Public",
             Complaint.status != "Closed"
         ]
 
-        # Hide ALL hostel complaints from day scholars
+        # Collect hostel category IDs
+        hostel_category_ids = [cid for cid in [mens_hostel_id, womens_hostel_id] if cid is not None]
+
         if student_stay_type == "Day Scholar":
+            # ✅ FIX: Dual-layer hostel exclusion for day scholars:
+            # Layer 1: Exclude by category_id (catches correctly-categorized hostel complaints)
             if mens_hostel_id:
                 conditions.append(Complaint.category_id != mens_hostel_id)
             if womens_hostel_id:
                 conditions.append(Complaint.category_id != womens_hostel_id)
+            # Layer 2: Exclude complaints submitted by hostel students that aren't
+            # General/Disciplinary (catches LLM miscategorized hostel complaints)
+            if hostel_category_ids:
+                hostel_submitters_sq = (
+                    select(Student.roll_no)
+                    .where(Student.stay_type == "Hostel")
+                    .scalar_subquery()
+                )
+                non_general_disc_ids = [
+                    cid for cid in hostel_category_ids
+                ]
+                # If category is NOT general/disciplinary AND submitter is a hostel student → exclude
+                safe_category_ids = [cid for cid in [general_id, disciplinary_id] if cid is not None]
+                if safe_category_ids:
+                    # Exclude: submitter is hostel student AND category is not in safe categories
+                    conditions.append(
+                        or_(
+                            Complaint.student_roll_no.notin_(hostel_submitters_sq),
+                            Complaint.category_id.in_(safe_category_ids)
+                        )
+                    )
+                else:
+                    # No safe categories found - just exclude all hostel submitters' non-hostel posts
+                    conditions.append(
+                        Complaint.student_roll_no.notin_(hostel_submitters_sq)
+                    )
         else:
             # Hostel students: Filter by gender
             # Men should not see women's hostel complaints
@@ -336,15 +376,6 @@ class ComplaintRepository(BaseRepository[Complaint]):
             elif student_gender == "Female" and mens_hostel_id:
                 conditions.append(Complaint.category_id != mens_hostel_id)
             # For "Other" gender, show both hostel categories
-
-        # ✅ UPDATED: Inter-department filtering with General/Disciplinary exception
-        # Get General and Disciplinary Committee category IDs
-        general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
-        disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
-        general_result = await self.session.execute(general_query)
-        disciplinary_result = await self.session.execute(disciplinary_query)
-        general_id = general_result.scalar()
-        disciplinary_id = disciplinary_result.scalar()
 
         # Students can see:
         # 1. Complaints from their own department
