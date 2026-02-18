@@ -1,11 +1,20 @@
 """
 Vote service for voting logic and priority calculation.
+
+Priority formula uses:
+- Upvote ratio  (upvotes / total_votes): filters out controversial complaints
+- Audience reach (how many students can actually see the complaint)
+- Engagement rate (votes / audience): measures real community concern
+- Impact is capped at ±40% of base score so votes don't flip priority levels
+  on their own — they nudge, not override.
 """
 
 import logging
+import math
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Vote, Complaint
@@ -212,60 +221,91 @@ class VoteService:
             "updated_at": vote.updated_at.isoformat() if vote.updated_at else None
         }
     
+    async def _get_audience_size(self, complaint: Complaint) -> int:
+        """
+        Estimate how many students can actually see this complaint.
+        Used to measure engagement rate (votes / audience).
+        """
+        from src.database.models import Student, ComplaintCategory
+
+        category_result = await self.db.execute(
+            select(ComplaintCategory.name).where(ComplaintCategory.id == complaint.category_id)
+        )
+        category_name = category_result.scalar()
+
+        if category_name == "Men's Hostel":
+            q = select(func.count()).select_from(Student).where(
+                and_(Student.stay_type == "Hostel", Student.gender == "Male")
+            )
+        elif category_name == "Women's Hostel":
+            q = select(func.count()).select_from(Student).where(
+                and_(Student.stay_type == "Hostel", Student.gender == "Female")
+            )
+        elif category_name == "Department":
+            q = select(func.count()).select_from(Student).where(
+                Student.department_id == complaint.complaint_department_id
+            )
+        else:
+            # General / Disciplinary Committee — visible to all students
+            q = select(func.count()).select_from(Student)
+
+        result = await self.db.execute(q)
+        return max(result.scalar() or 1, 1)
+
     async def recalculate_priority(self, complaint_id: UUID) -> float:
         """
-        ✅ ENHANCED: Recalculate complaint priority using Reddit-style vote ratios and filtered audience.
+        Recalculate complaint priority using upvote ratio + audience engagement.
 
-        Algorithm:
-        1. Calculate vote ratio (upvotes / total_votes) - similar to Reddit's upvote percentage
-        2. Filter votes by eligible audience (e.g., only count male hostel students for men's hostel complaints)
-        3. Apply vote ratio multiplier to prioritize highly-upvoted complaints
-        4. Ignore complaints with low vote ratio (more downvotes than upvotes = controversial/spam)
+        Formula:
+          ratio        = upvotes / total_votes   (0.0–1.0)
+          net_signal   = ratio * 2 - 1           (-1.0 to +1.0; 0.5 ratio → 0)
+          engagement   = sqrt(total_votes / audience_size) * sqrt(total_votes)
+                       = total_votes / sqrt(audience_size)
+                         (more votes AND higher % of audience → stronger signal)
+          raw_impact   = net_signal * engagement * VOTE_IMPACT_MULTIPLIER
+          capped_impact = clamp(raw_impact, -base*0.3, +base*0.4)
+          final_score  = base_score + capped_impact
 
-        Args:
-            complaint_id: Complaint UUID
-
-        Returns:
-            New priority score
+        This means:
+          - Votes nudge priority but can't single-handedly flip a level
+          - Highly controversial (50/50) complaints get zero boost
+          - Low turnout from a small audience still matters proportionally
         """
         complaint = await self.complaint_repo.get(complaint_id)
         if not complaint:
             logger.warning(f"Cannot recalculate priority - complaint {complaint_id} not found")
             return 0.0
 
-        # Base priority score from LLM categorization
+        upvotes = complaint.upvotes or 0
+        downvotes = complaint.downvotes or 0
+        total_votes = upvotes + downvotes
+
+        # Base score is fixed to the AI-assigned priority (not the current level
+        # which may already be vote-inflated from previous calculations)
         base_score = PRIORITY_SCORES.get(complaint.priority, 50.0)
 
-        # ✅ NEW: Get filtered vote counts based on complaint visibility
-        filtered_upvotes, filtered_downvotes = await self._get_filtered_vote_counts(complaint)
-
-        total_votes = filtered_upvotes + filtered_downvotes
-
-        # ✅ NEW: Calculate vote ratio (Reddit-style upvote percentage)
-        vote_ratio = filtered_upvotes / total_votes if total_votes > 0 else 0.5  # Default 0.5 if no votes
-
-        # ✅ NEW: Calculate net score (can be negative for highly downvoted complaints)
-        net_score = filtered_upvotes - filtered_downvotes
-
-        # ✅ NEW: Apply vote ratio logic
-        if vote_ratio < 0.5:
-            # More downvotes than upvotes - controversial or spam
-            # Don't boost priority (or even reduce it)
-            vote_impact = 0  # No priority boost for controversial complaints
-            logger.info(f"Complaint {complaint_id} is controversial (ratio={vote_ratio:.2%}), no priority boost")
+        if total_votes == 0:
+            final_score = base_score
         else:
-            # More upvotes than downvotes - legitimate complaint
-            # Apply weighted boost based on filtered upvotes and ratio
-            vote_impact = filtered_upvotes * vote_ratio * VOTE_IMPACT_MULTIPLIER
-            logger.info(f"Complaint {complaint_id} boosted by votes (ratio={vote_ratio:.2%}, impact={vote_impact})")
+            ratio = upvotes / total_votes               # 0.0–1.0
+            net_signal = ratio * 2 - 1                  # -1.0–+1.0 (0 at 50/50)
 
-        # Calculate final score (ensure it doesn't go negative)
-        final_score = max(base_score + vote_impact, 0.0)
+            audience = await self._get_audience_size(complaint)
+            # Engagement: sqrt(total_votes) weighs volume; dividing by sqrt(audience)
+            # normalises for how reachable the complaint is.
+            engagement = math.sqrt(total_votes) / math.sqrt(audience)
 
-        # Update priority score in database
+            raw_impact = net_signal * engagement * VOTE_IMPACT_MULTIPLIER * 10
+
+            # Cap: upward max +40% of base, downward max -30% of base
+            cap_up = base_score * 0.4
+            cap_down = base_score * 0.3
+            capped_impact = max(min(raw_impact, cap_up), -cap_down)
+
+            final_score = max(base_score + capped_impact, 0.0)
+
         await self.complaint_repo.update_priority_score(complaint_id, final_score)
 
-        # Optionally update priority level based on score
         new_priority_level = self._calculate_priority_level(final_score)
         if new_priority_level != complaint.priority:
             complaint.priority = new_priority_level
@@ -274,9 +314,11 @@ class VoteService:
 
         logger.info(
             f"Priority recalculated for {complaint_id}: "
-            f"Base={base_score}, Filtered_Upvotes={filtered_upvotes}, Filtered_Downvotes={filtered_downvotes}, "
-            f"Total_Votes={total_votes}, Vote_Ratio={vote_ratio:.2%}, Net_Score={net_score}, "
-            f"Vote_Impact={vote_impact}, Final={final_score}"
+            f"Base={base_score}, Upvotes={upvotes}, Downvotes={downvotes}, "
+            f"Ratio={upvotes/total_votes:.2f}, Impact={final_score - base_score:.1f}, "
+            f"Final={final_score:.1f}"
+            if total_votes > 0 else
+            f"Priority recalculated for {complaint_id}: Base={base_score}, No votes yet"
         )
 
         return final_score

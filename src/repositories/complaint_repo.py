@@ -395,7 +395,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
             select(Complaint)
             .options(selectinload(Complaint.category))
             .where(and_(*conditions))
-            .order_by(desc(Complaint.priority_score))
+            .order_by(desc(Complaint.submitted_at))  # Newest first
             .offset(skip)
             .limit(limit)
         )
