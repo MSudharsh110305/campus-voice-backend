@@ -57,7 +57,14 @@ async def create_authority(
     Requires admin privileges.
     """
     authority_repo = AuthorityRepository(db)
-    
+
+    # Validate email domain
+    if not str(data.email).endswith('@srec.ac.in'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authority email must be a valid @srec.ac.in address"
+        )
+
     # Check if email already exists
     existing = await authority_repo.get_by_email(data.email)
     if existing:

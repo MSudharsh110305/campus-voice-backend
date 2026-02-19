@@ -23,6 +23,7 @@ from src.services.notification_service import notification_service
 from src.services.spam_detection import spam_detection_service
 from src.services.image_verification import image_verification_service
 from src.utils.file_upload import file_upload_handler
+from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
 from src.config.constants import PRIORITY_SCORES
 
 logger = logging.getLogger(__name__)
@@ -101,16 +102,21 @@ class ComplaintService:
                 # Hostel-related text for a day scholar - let LLM categorize; validation will reject
                 pass  # handled by post-LLM validation
         elif student.gender == "Female":
-            # Female hostel student should not report about men's hostel
+            # Female hostel student should not report about men's hostel.
+            # Strip out "women's hostel" mentions first to avoid false substring matches
+            # ("women's hostel" contains "men's hostel" as a substring).
+            check_text = original_lower.replace("women's hostel", "__womens__").replace("womens hostel", "__womens__")
             mens_hostel_kw = ["men's hostel", "mens hostel", "boys hostel", "male hostel", "men hostel"]
-            if any(kw in original_lower for kw in mens_hostel_kw):
+            if any(kw in check_text for kw in mens_hostel_kw):
                 raise ValueError(
                     "Female students cannot submit complaints about men's hostel facilities"
                 )
         elif student.gender == "Male":
-            # Male hostel student should not report about women's hostel
+            # Male hostel student should not report about women's hostel.
+            # Strip out "men's hostel" mentions first to avoid false matches.
+            check_text = original_lower.replace("men's hostel", "__mens__").replace("mens hostel", "__mens__")
             womens_hostel_kw = ["women's hostel", "womens hostel", "girls hostel", "female hostel", "ladies hostel"]
-            if any(kw in original_lower for kw in womens_hostel_kw):
+            if any(kw in check_text for kw in womens_hostel_kw):
                 raise ValueError(
                     "Male students cannot submit complaints about women's hostel facilities"
                 )
@@ -502,6 +508,8 @@ class ComplaintService:
                 "confidence_score": verification_result.get("confidence_score", 0.0)
             }
             
+        except (InvalidFileTypeError, FileTooLargeError, FileUploadError):
+            raise  # Re-raise specific file errors so route can return 400
         except Exception as e:
             logger.error(f"Image upload error for {complaint_id}: {e}")
             raise ValueError(f"Failed to upload image: {str(e)}")

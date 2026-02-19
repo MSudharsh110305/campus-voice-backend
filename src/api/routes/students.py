@@ -91,9 +91,19 @@ async def register_student(
                 detail="Roll number already registered"
             )
         
+        # Validate department exists
+        from src.database.models import Department
+        from sqlalchemy import select as sa_select
+        dept_check = await db.execute(sa_select(Department).where(Department.id == data.department_id))
+        if not dept_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Department with id {data.department_id} does not exist"
+            )
+
         # Hash password
         password_hash = auth_service.hash_password(data.password)
-        
+
         # Create student
         student = await student_repo.create(
             roll_no=data.roll_no,

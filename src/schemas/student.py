@@ -62,6 +62,14 @@ class StudentRegister(BaseModel):
         examples=[3]
     )
     
+    @field_validator('email')
+    @classmethod
+    def validate_email_domain(cls, v: str) -> str:
+        """Validate that email uses @srec.ac.in domain"""
+        if not str(v).endswith('@srec.ac.in'):
+            raise ValueError("Email must be a valid @srec.ac.in address")
+        return str(v)
+
     @field_validator('roll_no')
     @classmethod
     def validate_roll_no(cls, v: str) -> str:

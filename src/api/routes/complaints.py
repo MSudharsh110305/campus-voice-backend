@@ -43,7 +43,7 @@ from src.schemas.common import SuccessResponse
 from src.services.complaint_service import ComplaintService
 from src.services.vote_service import VoteService
 from src.services.image_verification import image_verification_service
-from src.utils.exceptions import ComplaintNotFoundError, to_http_exception
+from src.utils.exceptions import ComplaintNotFoundError, to_http_exception, InvalidFileTypeError, FileTooLargeError, FileUploadError
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,13 @@ async def create_complaint(
     **Multipart form data required if image is uploaded**
     """
     try:
+        # Validate visibility before any processing
+        if visibility not in ("Public", "Private"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid visibility '{visibility}'. Must be 'Public' or 'Private'."
+            )
+
         service = ComplaintService(db)
 
         # ✅ UPDATED: No category_id parameter - fully AI-driven
@@ -452,6 +459,11 @@ async def upload_complaint_image(
         
     except HTTPException:
         raise
+    except (InvalidFileTypeError, FileTooLargeError, FileUploadError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"Image upload error: {e}", exc_info=True)
         raise HTTPException(
