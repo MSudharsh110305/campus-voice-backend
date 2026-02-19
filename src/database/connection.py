@@ -193,7 +193,18 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
     for attempt in range(1, retry_attempts + 1):
         try:
             await create_all_tables()
-            
+
+            # Schema migrations for new columns (idempotent)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE authority_updates "
+                        "ADD COLUMN IF NOT EXISTS target_gender VARCHAR[] NULL"
+                    ))
+                    logger.info("✅ Migration: authority_updates.target_gender ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (target_gender): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
                 

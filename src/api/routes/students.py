@@ -637,4 +637,133 @@ async def delete_notification(
     )
 
 
+# ==================== NOTICE FEED ====================
+
+@router.get(
+    "/notices",
+    summary="Get notices for current student",
+    description=(
+        "Returns active notices targeted at the current student based on their "
+        "gender, stay type, department, and year. Notices with no targeting filter "
+        "on a dimension are visible to all students for that dimension."
+    )
+)
+async def get_student_notices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get notices targeted at the current student."""
+    from src.database.models import AuthorityUpdate, Authority
+    from sqlalchemy import select, func, and_, or_, text as sa_text
+    from datetime import datetime, timezone
+    from sqlalchemy.orm import selectinload
+
+    student_repo = StudentRepository(db)
+    student = await student_repo.get_with_department(roll_no)
+    if not student:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Student not found")
+
+    dept_code = student.department.code if student.department else None
+    year_str = str(student.year)
+    now = datetime.now(timezone.utc)
+
+    # Base conditions: active and not expired
+    base = and_(
+        AuthorityUpdate.is_active == True,
+        or_(
+            AuthorityUpdate.expires_at == None,
+            AuthorityUpdate.expires_at > now,
+        )
+    )
+
+    # Build raw WHERE clause for array targeting using PostgreSQL syntax
+    # Each dimension: null/empty array = show to all; otherwise check membership
+    gender_clause = sa_text(
+        "(:gender = ANY(target_gender) OR target_gender IS NULL "
+        "OR array_length(target_gender, 1) IS NULL)"
+    ).bindparams(gender=student.gender)
+
+    stay_clause = sa_text(
+        "(:stay = ANY(target_stay_types) OR target_stay_types IS NULL "
+        "OR array_length(target_stay_types, 1) IS NULL)"
+    ).bindparams(stay=student.stay_type)
+
+    dept_clause = sa_text(
+        "(:dept = ANY(target_departments) OR target_departments IS NULL "
+        "OR array_length(target_departments, 1) IS NULL)"
+    ).bindparams(dept=dept_code or "")
+
+    year_clause = sa_text(
+        "(:yr = ANY(target_years) OR target_years IS NULL "
+        "OR array_length(target_years, 1) IS NULL)"
+    ).bindparams(yr=year_str)
+
+    total_q = (
+        select(func.count())
+        .select_from(AuthorityUpdate)
+        .where(base)
+        .where(gender_clause)
+        .where(stay_clause)
+        .where(dept_clause)
+        .where(year_clause)
+    )
+    total_r = await db.execute(total_q)
+    total = total_r.scalar() or 0
+
+    notices_q = (
+        select(AuthorityUpdate)
+        .where(base)
+        .where(gender_clause)
+        .where(stay_clause)
+        .where(dept_clause)
+        .where(year_clause)
+        .order_by(AuthorityUpdate.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    notices_r = await db.execute(notices_q)
+    notices = notices_r.scalars().all()
+
+    # Fetch authority info for each unique authority_id
+    auth_ids = list({n.authority_id for n in notices})
+    auth_map: dict = {}
+    if auth_ids:
+        auth_q = select(Authority).where(Authority.id.in_(auth_ids))
+        auth_r = await db.execute(auth_q)
+        for a in auth_r.scalars().all():
+            auth_map[a.id] = a
+
+    from src.schemas.authority import NoticeResponse, NoticeListResponse
+    items = []
+    for n in notices:
+        auth = auth_map.get(n.authority_id)
+        items.append(NoticeResponse(
+            id=n.id,
+            authority_id=n.authority_id,
+            authority_name=auth.name if auth else None,
+            authority_type=auth.authority_type if auth else None,
+            title=n.title,
+            content=n.content,
+            category=n.category,
+            priority=n.priority,
+            target_gender=n.target_gender,
+            target_stay_types=n.target_stay_types,
+            target_departments=n.target_departments,
+            target_years=n.target_years,
+            is_active=n.is_active,
+            created_at=n.created_at,
+            expires_at=n.expires_at,
+        ))
+
+    return NoticeListResponse(
+        notices=items,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit if total else 0,
+    )
+
+
 __all__ = ["router"]

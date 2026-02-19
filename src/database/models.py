@@ -260,6 +260,7 @@ class AuthorityUpdate(Base):
     target_departments = Column(ARRAY(String), nullable=True)
     target_years = Column(ARRAY(String), nullable=True)
     target_stay_types = Column(ARRAY(String), nullable=True)
+    target_gender = Column(ARRAY(String), nullable=True)  # ["Male", "Female", "Other"] or null = all
     is_highlighted = Column(Boolean, default=False, nullable=False)
     is_pinned = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)

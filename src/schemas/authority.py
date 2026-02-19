@@ -11,7 +11,9 @@ from src.config.constants import (
     AuthorityType,
     AnnouncementCategory,
     AnnouncementPriority,
-    VisibilityLevel
+    VisibilityLevel,
+    UpdateCategory,
+    UpdatePriority,
 )
 
 # ✅ Forward reference to avoid circular imports
@@ -520,6 +522,137 @@ class AuthorityUpdateResponse(BaseModel):
         }
     }
 
+# ==================== NOTICE / BROADCAST ====================
+
+class NoticeCreate(BaseModel):
+    """Schema for creating a targeted notice/broadcast to students"""
+
+    title: str = Field(..., min_length=5, max_length=255, description="Notice title")
+    content: str = Field(..., min_length=10, max_length=5000, description="Notice body")
+    category: UpdateCategory = Field(
+        default=UpdateCategory.ANNOUNCEMENT,
+        description="Category: Announcement, Policy Change, Maintenance, Event, Emergency, General"
+    )
+    priority: UpdatePriority = Field(
+        default=UpdatePriority.MEDIUM,
+        description="Priority: Low, Medium, High, Urgent"
+    )
+    # Targeting filters — null/empty means no restriction on that dimension
+    target_gender: Optional[List[str]] = Field(
+        None,
+        description="Gender filter: ['Male'], ['Female'], ['Male','Female'] or null for all"
+    )
+    target_stay_types: Optional[List[str]] = Field(
+        None,
+        description="Residence filter: ['Hostel'], ['Day Scholar'] or null for all"
+    )
+    target_departments: Optional[List[str]] = Field(
+        None,
+        description="Dept codes e.g. ['CSE','ECE'] or null for all"
+    )
+    target_years: Optional[List[str]] = Field(
+        None,
+        description="Year numbers as strings: ['1','2','3','4'] or null for all"
+    )
+    expires_at: Optional[datetime] = Field(None, description="Expiry timestamp (optional)")
+
+    @field_validator('target_gender')
+    @classmethod
+    def validate_target_gender(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            valid = {"Male", "Female", "Other"}
+            for g in v:
+                if g not in valid:
+                    raise ValueError(f"Invalid gender value: {g}. Must be Male, Female, or Other")
+        return v
+
+    @field_validator('target_stay_types')
+    @classmethod
+    def validate_stay_types(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            valid = {"Hostel", "Day Scholar"}
+            for s in v:
+                if s not in valid:
+                    raise ValueError(f"Invalid stay type: {s}. Must be Hostel or Day Scholar")
+        return v
+
+    @field_validator('target_years')
+    @classmethod
+    def validate_years(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            for y in v:
+                if not y.isdigit() or not (1 <= int(y) <= 10):
+                    raise ValueError(f"Invalid year: {y}. Must be a digit between 1 and 10")
+        return v
+
+    @field_validator('expires_at')
+    @classmethod
+    def validate_expires_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is not None and v <= datetime.now(timezone.utc):
+            raise ValueError("Expiry date must be in the future")
+        return v
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "title": "Hot water maintenance this Sunday",
+                "content": "Hot water supply in Block A will be unavailable this Sunday 9 AM–5 PM for pipe maintenance.",
+                "category": "Maintenance",
+                "priority": "High",
+                "target_gender": ["Male"],
+                "target_stay_types": ["Hostel"],
+                "target_departments": None,
+                "target_years": None,
+                "expires_at": "2026-02-25T23:59:59"
+            }
+        }
+    }
+
+
+class NoticeResponse(BaseModel):
+    """Schema for a notice/broadcast response"""
+
+    id: int
+    authority_id: int
+    authority_name: Optional[str] = None
+    authority_type: Optional[str] = None
+    title: str
+    content: str
+    category: str
+    priority: str
+    target_gender: Optional[List[str]] = None
+    target_stay_types: Optional[List[str]] = None
+    target_departments: Optional[List[str]] = None
+    target_years: Optional[List[str]] = None
+    is_active: bool
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class NoticeListResponse(BaseModel):
+    """Schema for paginated notice list"""
+
+    notices: List[NoticeResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "notices": [],
+                "total": 5,
+                "page": 1,
+                "page_size": 20,
+                "total_pages": 1
+            }
+        }
+    }
+
+
 __all__ = [
     # Authority Management
     "AuthorityLogin",
@@ -530,14 +663,19 @@ __all__ = [
     "AuthorityDashboard",
     "AuthorityProfileUpdate",
     "AuthorityListResponse",
-    
+
     # Authority Announcements (general broadcasts)
     "AuthorityAnnouncementCreate",
     "AuthorityAnnouncementUpdate",
     "AuthorityAnnouncementResponse",
     "AuthorityAnnouncementListResponse",
-    
+
     # Authority Updates (complaint-specific updates)
-    "AuthorityUpdateCreate",        # ✅ ADDED - for posting updates on complaints
-    "AuthorityUpdateResponse",      # ✅ ADDED - response after posting update
+    "AuthorityUpdateCreate",
+    "AuthorityUpdateResponse",
+
+    # Notice / Broadcast
+    "NoticeCreate",
+    "NoticeResponse",
+    "NoticeListResponse",
 ]

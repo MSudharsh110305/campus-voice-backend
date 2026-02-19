@@ -147,61 +147,70 @@ class LLMService:
         stay_type = context.get('stay_type', 'Unknown')
         department = context.get('department', 'Unknown')
 
-        return f"""You are a complaint categorization and department routing system for SREC college campus.
+        return f"""You are a complaint categorization system for SREC engineering college.
 
-Student Profile:
+Student context (use ONLY to pick Men's vs Women's hostel):
 - Gender: {gender}
-- Residence Type: {stay_type}
+- Stay Type: {stay_type}
 - Department: {department}
 
-Complaint Text:
+Complaint:
 "{text}"
 
-Categories (choose EXACTLY ONE):
-1. **Men's Hostel** - Hostel room, mess food, hostel bathroom, water supply, hostel electricity, hostel cleanliness, hostel amenities. ONLY for Male Hostel students.
-2. **Women's Hostel** - Hostel room, mess food, hostel bathroom, water supply, hostel electricity, hostel cleanliness, hostel amenities. ONLY for Female Hostel students.
-3. **General** - Campus infrastructure and physical facilities ONLY: canteen, library, playground, parking, transport, gym, auditorium, campus buildings, roads, drinking water stations, common area furniture, campus wifi/internet.
-4. **Department** - Academic and department-specific: lab equipment, classroom issues, faculty/teaching concerns, timetable, curriculum, exam issues, project/internship, department infrastructure.
-5. **Disciplinary Committee** - Ragging, harassment, bullying, threats, violence, abuse, serious misconduct, safety concerns.
+CATEGORIES (choose exactly one):
+1. Men's Hostel — Issues inside men's hostel: rooms, hostel mess/food, hostel bathrooms, hostel water/electricity, hostel maintenance, hostel warden/security.
+2. Women's Hostel — Same as above for women's hostel.
+3. General — Campus-wide physical facilities: canteen, library, sports grounds, parking, campus roads, drinking water stations, campus wifi, auditorium, common areas.
+4. Department — Academic: labs, classrooms, projectors, AV/IT equipment, software licences, faculty/teaching, curriculum, exams, practicals, seminar halls, department office, printers for academic use.
+5. Disciplinary Committee — Ragging, physical assault, sexual harassment, bullying, threats, cheating/malpractice in exams, academic dishonesty, plagiarism, unfair means.
 
-STRICT CATEGORIZATION RULES:
-- If Gender is "Male" and complaint is about hostel facilities/issues, choose "Men's Hostel".
-- If Gender is "Female" and complaint is about hostel facilities/issues, choose "Women's Hostel".
-- "General" = physical infrastructure and materialistic issues on campus (NOT academic, NOT hostel).
-- "Department" = academic, faculty, lab, classroom, course-related issues.
-- Only use "Disciplinary Committee" for serious safety/harassment/ragging issues.
-- Categorize based on complaint content, not student eligibility (validation happens separately).
+DECISION RULES — apply strictly in order:
 
-DEPARTMENT DETECTION (Analyze complaint text for department keywords):
-Valid Departments: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
+RULE 1 — ACADEMIC = DEPARTMENT (highest priority rule):
+Any mention of: lab, classroom, lecture hall, projector, computer lab, software, AV system, printer (academic), faculty, professor, HOD, timetable, exam schedule, curriculum, practicals, internship, project submission, seminar hall, department office
+→ ALWAYS "Department", regardless of where the student lives.
+A male hostel resident complaining about a CSE lab = "Department", NOT "Men's Hostel".
 
-Rules:
-- If complaint mentions specific department keywords (e.g., "ECE lab", "mechanical workshop", "CSE faculty"), set target_department to that department code
-- If no specific department mentioned, use student's department ({department})
-- For cross-department complaints (student from one dept complaining about another), target the mentioned department
-- Examples:
-  * "The ECE lab equipment is broken" from CSE student → target_department: "ECE"
-  * "Our classroom projector is not working" from ECE student → target_department: "ECE"
-  * "The mechanical workshop is too noisy" from CSE student → target_department: "MECH"
+RULE 2 — EXAM MISCONDUCT = DISCIPLINARY COMMITTEE:
+Any mention of: cheating, cheat sheet, copying, malpractice, plagiarism, academic dishonesty, unfair means, exam paper leak, impersonation in exam
+→ ALWAYS "Disciplinary Committee", NOT "Department".
 
-Priority Levels:
-- **Low**: Minor inconvenience, cosmetic issues
-- **Medium**: Moderate impact, needs attention soon
-- **High**: Significant impact, urgent attention needed
-- **Critical**: Safety concern, immediate action required
+RULE 3 — RAGGING/HARASSMENT = DISCIPLINARY COMMITTEE:
+Ragging, physical threats, assault, sexual harassment, bullying (systematic), stalking
+→ "Disciplinary Committee".
+
+RULE 4 — HOSTEL = HOSTEL FACILITIES ONLY:
+"Hostel" means complaints about things physically inside the hostel building: rooms, hostel mess food, hostel bathrooms, hostel water/power supply, hostel maintenance, hostel security staff.
+NOT: academic labs. NOT: campus canteen. NOT: classroom equipment.
+
+RULE 5 — GENDER DETERMINES MEN'S vs WOMEN'S HOSTEL:
+Gender is ONLY used to choose between Men's Hostel and Women's Hostel.
+It NEVER converts a Department/General/DC complaint into a hostel complaint.
+
+DEPARTMENT DETECTION:
+Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
+- If complaint names a specific dept/lab (e.g. "ECE lab", "mechanical workshop"), target that dept
+- Cross-dept: ECE student complaining about CSE lab → target_department = "CSE"
+- Default: use student's department ({department})
+
+PRIORITY:
+- Critical: immediate safety danger, injury risk
+- High: many students affected, key facility down, exam impacted
+- Medium: moderate disruption
+- Low: minor inconvenience
 
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
   "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
   "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE",
   "priority": "Low|Medium|High|Critical",
-  "reasoning": "Brief explanation (max 50 words)",
+  "reasoning": "Max 40 words",
   "confidence": 0.0-1.0,
   "is_against_authority": false,
   "requires_image": false
 }}
 
-JSON Response:"""
+JSON:"""
     
     def _extract_json_from_response(self, content: str) -> Optional[Dict[str, Any]]:
         """Extract JSON from LLM response (handles markdown code blocks)"""
@@ -655,38 +664,37 @@ JSON Response:"""
         """Build prompt for image requirement detection"""
         category_hint = f"\nCategory: {category}" if category else ""
 
-        return f"""Analyze this complaint and determine if visual evidence (images/photos) is REQUIRED for proper verification and resolution.
+        return f"""Determine if this complaint requires a photo/image for proper verification.
 
-Complaint Text:
+Complaint:
 "{text}"{category_hint}
 
-Image is REQUIRED for:
-- Infrastructure issues (broken/damaged items, leaks, structural problems)
-- Cleanliness issues (dirty areas, unhygienic conditions)
-- Equipment malfunction (visible damage or defects)
-- Safety hazards (exposed wires, broken furniture, hazardous conditions)
-- Facility problems (broken doors, windows, cracks, stains)
-- Visible proof needed (graffiti, unauthorized items, visible violations)
+Image IS REQUIRED only for:
+- Something physically broken or structurally damaged (broken furniture, cracked walls, burst pipes)
+- Visible pests/insects present (cockroaches seen, rats sighted)
+- Exposed electrical hazards (dangling wires, sparking sockets)
+- Visible facility damage (broken doors/windows, large stains, visible mould)
 
-Image is OPTIONAL/NOT REQUIRED for:
-- Abstract/policy issues (rules, procedures, timings)
-- Service-related complaints (staff behavior, response time)
-- Academic issues (course content, faculty concerns)
-- Request for improvements (suggestions without specific issues)
-- Abstract concerns (noise, temperature preferences without visible cause)
-- Personal issues (interpersonal conflicts, requests)
+Image is NOT REQUIRED for:
+- Absent or insufficient staff (no cleaning staff deployed, guard absent, duty not performed)
+- Schedule or policy violations (timings changed, rules not followed, notice not given)
+- Service failures (repairs not done despite reports, no response from management)
+- Academic or interpersonal issues (faculty, exams, harassment, bullying)
+- Complaints about waiting for action (already reported, still not resolved)
+- Any complaint describing LACK OF SERVICE rather than a visible physical problem
 
-Task: Determine if this complaint REQUIRES image evidence.
+DEFAULT: Set image_required = false unless the complaint EXPLICITLY describes a visible physical condition that can ONLY be verified by a photo.
+When uncertain, always choose false — do not block legitimate complaints.
 
 Respond ONLY with valid JSON (no markdown):
 {{
   "image_required": true|false,
-  "reasoning": "Brief explanation why image is/isn't required (max 50 words)",
+  "reasoning": "Max 40 words",
   "confidence": 0.0-1.0,
-  "suggested_evidence": "What the image should show (only if required)"
+  "suggested_evidence": "What to photograph (only if true, else null)"
 }}
 
-JSON Response:"""
+JSON:"""
 
     def _fallback_image_requirement(self, text: str) -> Dict[str, Any]:
         """Fallback logic for image requirement detection"""

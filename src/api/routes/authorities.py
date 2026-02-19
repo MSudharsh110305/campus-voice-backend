@@ -32,6 +32,9 @@ from src.schemas.authority import (
     AuthorityDashboard,
     AuthorityUpdateCreate,
     AuthorityUpdateResponse,
+    NoticeCreate,
+    NoticeResponse,
+    NoticeListResponse,
 )
 from src.schemas.complaint import (
     ComplaintUpdate,
@@ -748,6 +751,258 @@ async def get_escalation_history(
         "escalation_count": len(escalations),
         "history": history
     }
+
+
+# ==================== NOTICES / BROADCASTS ====================
+
+# Authority-type targeting scope:
+# Men's Hostel Warden/Deputy   → Male + Hostel only
+# Women's Hostel Warden/Deputy → Female + Hostel only
+# Senior Deputy Warden         → Hostel only (both genders)
+# HOD                          → Own department only (any stay/gender)
+# Admin / Admin Officer / DC   → No restrictions
+
+def _apply_notice_scope(authority, data: NoticeCreate) -> dict:
+    """
+    Enforce per-authority-type targeting restrictions.
+    Returns validated and clamped targeting fields.
+    Raises HTTPException 403 on scope violation.
+    """
+    atype = authority.authority_type
+    tg = list(data.target_gender) if data.target_gender else None
+    ts = list(data.target_stay_types) if data.target_stay_types else None
+    td = list(data.target_departments) if data.target_departments else None
+    ty = list(data.target_years) if data.target_years else None
+
+    if atype in ("Men's Hostel Warden", "Men's Hostel Deputy Warden"):
+        if tg and "Female" in tg:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail="Men's Hostel authorities cannot target female students")
+        if ts and "Day Scholar" in ts:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail="Men's Hostel authorities cannot target Day Scholars")
+        tg = ["Male"]
+        ts = ["Hostel"]
+
+    elif atype in ("Women's Hostel Warden", "Women's Hostel Deputy Warden"):
+        if tg and "Male" in tg:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail="Women's Hostel authorities cannot target male students")
+        if ts and "Day Scholar" in ts:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail="Women's Hostel authorities cannot target Day Scholars")
+        tg = ["Female"]
+        ts = ["Hostel"]
+
+    elif atype == "Senior Deputy Warden":
+        if ts and "Day Scholar" in ts:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail="Senior Deputy Warden can only send notices to hostel students")
+        ts = ["Hostel"]
+
+    elif atype == "HOD":
+        dept = authority.department.code if authority.department else None
+        if not dept:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                detail="HOD account is not linked to a department")
+        if td and dept not in td:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail=f"HOD can only send notices to their own department ({dept})")
+        td = [dept]
+
+    # Admin, Admin Officer, DC → no restrictions
+
+    # Determine coarse visibility label from final targets
+    if ts == ["Hostel"] and tg == ["Male"]:
+        visibility = "Hostel"
+    elif ts == ["Hostel"] and tg == ["Female"]:
+        visibility = "Hostel"
+    elif ts == ["Hostel"]:
+        visibility = "Hostel"
+    elif ts == ["Day Scholar"]:
+        visibility = "Day Scholar"
+    elif td:
+        visibility = "Department"
+    else:
+        visibility = "All Students"
+
+    return {
+        "target_gender": tg,
+        "target_stay_types": ts,
+        "target_departments": td,
+        "target_years": ty,
+        "visibility": visibility,
+    }
+
+
+@router.post(
+    "/notices",
+    summary="Send a targeted notice",
+    description=(
+        "Authority sends a notice to targeted students. "
+        "Scope is automatically restricted based on authority type: "
+        "hostel wardens can only reach their hostel, HODs only their department, etc."
+    )
+)
+async def create_notice(
+    data: NoticeCreate,
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create and send a targeted notice to students."""
+    from src.database.models import AuthorityUpdate
+
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get_with_department(authority_id)
+    if not authority:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Authority not found")
+
+    scope = _apply_notice_scope(authority, data)
+
+    notice = AuthorityUpdate(
+        authority_id=authority_id,
+        title=data.title,
+        content=data.content,
+        category=data.category.value,
+        priority=data.priority.value,
+        visibility=scope["visibility"],
+        target_departments=scope["target_departments"],
+        target_years=scope["target_years"],
+        target_stay_types=scope["target_stay_types"],
+        target_gender=scope["target_gender"],
+        is_active=True,
+        expires_at=data.expires_at,
+    )
+
+    db.add(notice)
+    await db.commit()
+    await db.refresh(notice)
+
+    logger.info(
+        f"Notice created by authority {authority_id} ({authority.authority_type}): "
+        f"id={notice.id}, targets={scope}"
+    )
+
+    return {
+        "success": True,
+        "message": "Notice sent successfully",
+        "id": notice.id,
+        "target_gender": scope["target_gender"],
+        "target_stay_types": scope["target_stay_types"],
+        "target_departments": scope["target_departments"],
+        "target_years": scope["target_years"],
+        "visibility": scope["visibility"],
+    }
+
+
+@router.get(
+    "/my-notices",
+    summary="Get notices sent by current authority",
+    description="Paginated list of notices posted by the current authority"
+)
+async def get_my_notices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    active_only: bool = Query(True),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """List notices created by the current authority."""
+    from src.database.models import AuthorityUpdate, Authority
+    from sqlalchemy import select, func, and_
+
+    conditions = [AuthorityUpdate.authority_id == authority_id]
+    if active_only:
+        now = datetime.now(timezone.utc)
+        conditions.append(AuthorityUpdate.is_active == True)
+        conditions.append(
+            (AuthorityUpdate.expires_at == None) | (AuthorityUpdate.expires_at > now)
+        )
+
+    total_q = select(func.count()).where(and_(*conditions))
+    total_r = await db.execute(total_q)
+    total = total_r.scalar() or 0
+
+    notices_q = (
+        select(AuthorityUpdate)
+        .where(and_(*conditions))
+        .order_by(AuthorityUpdate.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    notices_r = await db.execute(notices_q)
+    notices = notices_r.scalars().all()
+
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    auth_name = authority.name if authority else None
+    auth_type = authority.authority_type if authority else None
+
+    items = []
+    for n in notices:
+        items.append(NoticeResponse(
+            id=n.id,
+            authority_id=n.authority_id,
+            authority_name=auth_name,
+            authority_type=auth_type,
+            title=n.title,
+            content=n.content,
+            category=n.category,
+            priority=n.priority,
+            target_gender=n.target_gender,
+            target_stay_types=n.target_stay_types,
+            target_departments=n.target_departments,
+            target_years=n.target_years,
+            is_active=n.is_active,
+            created_at=n.created_at,
+            expires_at=n.expires_at,
+        ))
+
+    return NoticeListResponse(
+        notices=items,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit if total else 0,
+    )
+
+
+@router.delete(
+    "/notices/{notice_id}",
+    summary="Deactivate a notice",
+    description="Authority deactivates (soft-deletes) one of their own notices"
+)
+async def deactivate_notice(
+    notice_id: int,
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """Deactivate a notice (only the creator or Admin can do this)."""
+    from src.database.models import AuthorityUpdate
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(AuthorityUpdate).where(AuthorityUpdate.id == notice_id)
+    )
+    notice = result.scalar_one_or_none()
+
+    if not notice:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Notice not found")
+
+    # Only the creator or Admin can deactivate
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+
+    if not is_admin and notice.authority_id != authority_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="You can only deactivate your own notices")
+
+    notice.is_active = False
+    await db.commit()
+
+    logger.info(f"Notice {notice_id} deactivated by authority {authority_id}")
+    return {"success": True, "message": "Notice deactivated"}
 
 
 # ==================== STATISTICS ====================
