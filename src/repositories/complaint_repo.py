@@ -500,6 +500,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         query = (
             select(Complaint)
+            .options(selectinload(Complaint.category))
             .where(
                 and_(
                     Complaint.image_data.isnot(None),
@@ -511,7 +512,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         )
         result = await self.session.execute(query)
         return result.scalars().all()
-    
+
     async def get_rejected_images(
         self,
         skip: int = 0,
