@@ -172,9 +172,12 @@ class ComplaintService:
             # This prevents day scholars from seeing hostel complaints in public feed.
             ai_category = categorization.get("category")
             HOSTEL_KEYWORDS = [
-                "hostel", "room", "mess", "warden", "dorm", "bed", "bathroom",
-                "water supply", "electricity", "ac", "fan", "toilet", "shower",
-                "dining", "laundry", "curfew", "common room", "bunk"
+                "hostel", "mess", "warden", "dorm", "bunk",
+                "hostel room", "my room", "our room", "the room",
+                "bathroom", "water supply", "electricity in",
+                "air conditioning", "ceiling fan", "hostel fan",
+                "toilet", "shower", "dining hall", "laundry",
+                "curfew", "common room",
             ]
             if (student.stay_type == "Hostel" and
                     ai_category not in ("Men's Hostel", "Women's Hostel") and
@@ -186,6 +189,11 @@ class ComplaintService:
                 )
                 categorization["category"] = corrected
                 ai_category = corrected
+
+            # Re-apply academic override: if text has unambiguous academic keywords,
+            # never force hostel category (handles "ac" false matches etc.)
+            categorization = llm_service._apply_academic_override(original_text, categorization)
+            ai_category = categorization.get("category")
 
             # Validate hostel category against student profile
             if ai_category in ("Men's Hostel", "Women's Hostel"):

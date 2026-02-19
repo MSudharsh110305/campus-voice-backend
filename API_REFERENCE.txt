@@ -2,7 +2,7 @@
   CAMPUSVOICE API REFERENCE
   Backend: FastAPI (async) | PostgreSQL | Groq LLM | JWT Auth
   Base URL: http://localhost:8000/api
-  Version: Current (all 249 tests passing)
+  Version: Current (425 combined tests, 97.9% pass rate)
 ================================================================================
 
 This document is intended for frontend developers integrating with the
@@ -228,7 +228,7 @@ Public routes (no token required):
   processed_at       TIMESTAMPTZ     NOT NULL
 
 --- TABLE: notifications ---
-  id                VARCHAR(100)    NOT NULL
+  id                BIGINT          PK, auto-increment
   recipient_type    VARCHAR(50)     NOT NULL  CHECK: 'Student' | 'Authority'
   recipient_id      VARCHAR(255)    NOT NULL  (roll_no for students, str(id) for authorities)
   complaint_id      UUID            FK -> complaints.id, NULLABLE
@@ -564,6 +564,48 @@ A12. Delete Notification
     403  Notification belongs to another user
     404  Notification not found
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A13. Get Notice Feed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/notices
+  Auth: Student token
+
+  Returns active, non-expired notices targeted to the logged-in student.
+  Targeting is automatic: only notices whose audience matches the student's
+  gender, stay_type, department, and year are returned.
+  A null/empty target dimension = visible to ALL students on that dimension.
+
+  Query params:
+    skip   integer  default: 0
+    limit  integer  default: 20, max: 100
+
+  Response 200:
+    notices      array    List of notice objects
+    total        integer
+    page         integer
+    page_size    integer
+    total_pages  integer
+
+  Notice object fields:
+    id                integer
+    authority_id      integer
+    authority_name    string | null    Name of the authority who posted
+    authority_type    string | null    e.g. "Men's Hostel Warden"
+    title             string
+    content           string
+    category          string   "Announcement"|"Policy Change"|"Event"|"Maintenance"|"Emergency"|"General"
+    priority          string   "Low"|"Medium"|"High"|"Urgent"
+    target_gender     array | null     e.g. ["Male"] or null (all genders)
+    target_stay_types array | null     e.g. ["Hostel"] or null (all stay types)
+    target_departments array | null    e.g. ["CSE","ECE"] or null (all departments)
+    target_years      array | null     e.g. ["1","2"] or null (all years)
+    is_active         boolean
+    created_at        string   ISO 8601
+    expires_at        string | null
+
+  Errors:
+    401  Missing/invalid token
+
 ================================================================================
   SECTION B — COMPLAINT ENDPOINTS (Student-facing)
   Prefix: /api/complaints
@@ -884,13 +926,16 @@ B14. Advanced Complaint Filter
   Auth: Student token
 
   Query params:
-    skip         integer  default: 0
-    limit        integer  default: 20, max: 100
-    status       string   optional  "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
-    priority     string   optional  "Low"|"Medium"|"High"|"Critical"
-    category_id  integer  optional  1-5
-    has_image    boolean  optional  true/false
-    is_verified  boolean  optional  true/false (image verification status)
+    skip          integer  default: 0
+    limit         integer  default: 20, max: 100
+    status        string   optional  "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
+    priority      string   optional  "Low"|"Medium"|"High"|"Critical"
+    category_id   integer  optional  1-5
+    department_id integer  optional  Filter by complaint department (1-13)
+    date_from     string   optional  Start date filter "YYYY-MM-DD"
+    date_to       string   optional  End date filter "YYYY-MM-DD"
+    has_image     boolean  optional  true/false
+    is_verified   boolean  optional  true/false (image verification status)
 
   Applies same hostel visibility rules as public-feed.
   Only Public + Department complaints included.
@@ -1106,6 +1151,97 @@ C10. Get Authority Statistics
     spam_flagged                integer
     avg_resolution_time_hours   null      (NOT IMPLEMENTED — always null)
     performance_rating          null      (NOT IMPLEMENTED — always null)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C11. Create Notice / Broadcast
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/authorities/notices
+  Auth: Authority token
+  Content-Type: application/json
+
+  Authorities can broadcast notices to targeted groups of students.
+  Scope is AUTOMATICALLY ENFORCED based on authority type — you cannot
+  target students outside your jurisdiction.
+
+  Scope enforcement rules:
+    Men's Hostel Warden / Deputy   -> target_gender locked to ["Male"],
+                                      target_stay_types locked to ["Hostel"]
+    Women's Hostel Warden / Deputy -> target_gender locked to ["Female"],
+                                      target_stay_types locked to ["Hostel"]
+    Senior Deputy Warden           -> target_stay_types locked to ["Hostel"]
+    HOD                            -> target_departments locked to their own dept
+    Admin / Admin Officer / DC     -> no restrictions (can target anyone)
+
+  Request body:
+    title              string    REQUIRED  5-255 chars
+    content            string    REQUIRED  10-5000 chars
+    category           string    optional  "Announcement"|"Policy Change"|"Event"|
+                                           "Maintenance"|"Emergency"|"General"
+                                           (default: "Announcement")
+    priority           string    optional  "Low"|"Medium"|"High"|"Urgent"
+                                           (default: "Medium")
+    target_gender      array     optional  ["Male"]|["Female"]|["Male","Female"]|null
+                                           (null = all genders)
+    target_stay_types  array     optional  ["Hostel"]|["Day Scholar"]|
+                                           ["Hostel","Day Scholar"]|null
+    target_departments array     optional  ["CSE","ECE",...]|null (dept codes)
+    target_years       array     optional  ["1","2","3","4"]|null
+    expires_at         string    optional  ISO 8601 datetime for auto-expiry
+
+  Response 200/201:
+    success            boolean   true
+    message            string    "Notice sent successfully"
+    id                 integer   Created notice ID
+    target_gender      array | null
+    target_stay_types  array | null
+    target_departments array | null
+    target_years       array | null
+    visibility         string    Human-readable scope (e.g. "Hostel", "All Students")
+
+  Errors:
+    400  title/content too short or too long
+    403  Attempted to target students outside your authority scope
+         (e.g. Men's Hostel Warden targeting Female students)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C12. Get My Notices
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/my-notices
+  Auth: Authority token
+
+  Returns notices created by the logged-in authority.
+
+  Query params:
+    skip        integer  default: 0
+    limit       integer  default: 20, max: 100
+    active_only boolean  default: true   Only return active (non-deactivated) notices
+
+  Response 200:
+    notices     array    List of notice objects (same shape as A13 notice object)
+    total       integer
+    page        integer
+    page_size   integer
+    total_pages integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C13. Deactivate Notice
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DELETE /api/authorities/notices/{notice_id}
+  Auth: Authority token
+
+  Soft-deletes (deactivates) a notice so it no longer appears in the student feed.
+  Only the notice creator or an Admin can deactivate a notice.
+
+  Path param:
+    notice_id  integer
+
+  Response 200:
+    success  boolean  true
+    message  string   "Notice deactivated"
+
+  Errors:
+    403  Not the notice creator (and not an Admin)
+    404  Notice not found
 
 ================================================================================
   SECTION D — ADMIN ENDPOINTS
@@ -1368,38 +1504,45 @@ HTTP status codes used:
   429  Too Many Reqs  Rate limit exceeded (complaint submission: 5/day per student)
   500  Server Error   Unhandled server-side error
 
-Standard error response:
-  { "detail": "Error message here" }
+Standard error response (all 4xx and 5xx):
+  {
+    "success": false,
+    "error": "Human-readable error message",
+    "error_code": "HTTP_400",      // HTTP_400, HTTP_401, HTTP_403, HTTP_404, etc.
+    "request_id": "uuid-string"    // For tracing; ignore in frontend logic
+  }
 
 Pydantic validation error (422):
   {
-    "detail": [
-      {
-        "loc": ["body", "field_name"],
-        "msg": "Description of validation failure",
-        "type": "value_error"
-      }
-    ]
+    "success": false,
+    "error": "Validation error",
+    "error_code": "VALIDATION_ERROR",
+    "details": {
+      "validation_errors": [
+        {
+          "field": "field_name",
+          "message": "Description of validation failure",
+          "type": "value_error"
+        }
+      ]
+    },
+    "request_id": "uuid-string"
   }
 
 Spam rejection (400):
   {
-    "detail": {
-      "success": false,
-      "error": "Complaint marked as spam/abusive",
-      "reason": "...",
-      "is_spam": true
-    }
+    "success": false,
+    "error": "Complaint marked as spam/abusive",
+    "reason": "...",
+    "is_spam": true
   }
 
 Image required (400):
   {
-    "detail": {
-      "success": false,
-      "error": "Image required",
-      "reason": "...",
-      "image_required": true
-    }
+    "success": false,
+    "error": "Image required for this complaint",
+    "reason": "...",
+    "image_required": true
   }
 
 ================================================================================
@@ -1483,8 +1626,11 @@ These three endpoints send parameters as URL query params, not JSON:
 
 --- PAGINATION PATTERN ---
 
-  All list responses follow this pattern:
-    { "items": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5 }
+  List responses use a resource-specific key (NOT "items"):
+    Complaints list:   { "complaints": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5 }
+    Students list:     { "students": [...],   "total": 100 }
+    Authorities list:  { "authorities": [...], "total": 100 }
+    Notifications:     { "notifications": [...], "total": 100, "unread_count": 3 }
 
   To get page N with size P:  skip = (N-1) * P, limit = P
 

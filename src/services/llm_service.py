@@ -127,6 +127,9 @@ class LLMService:
             result["model"] = self.model
             result["status"] = "Success"
 
+            # Deterministic override: hostel → Department if academic content detected
+            result = self._apply_academic_override(text, result)
+
             logger.info(
                 f"Categorization successful: {result['category']} "
                 f"(Priority: {result['priority']}, Target Dept: {result['target_department']}, "
@@ -147,56 +150,45 @@ class LLMService:
         stay_type = context.get('stay_type', 'Unknown')
         department = context.get('department', 'Unknown')
 
-        return f"""You are a complaint categorization system for SREC engineering college.
+        return f"""You are a complaint routing system at SREC engineering college.
 
-Student context (use ONLY to pick Men's vs Women's hostel):
+Student context (Gender used ONLY for Men's vs Women's Hostel choice):
 - Gender: {gender}
 - Stay Type: {stay_type}
-- Department: {department}
+- Home Department: {department}
 
 Complaint:
 "{text}"
 
-CATEGORIES (choose exactly one):
-1. Men's Hostel — Issues inside men's hostel: rooms, hostel mess/food, hostel bathrooms, hostel water/electricity, hostel maintenance, hostel warden/security.
-2. Women's Hostel — Same as above for women's hostel.
-3. General — Campus-wide physical facilities: canteen, library, sports grounds, parking, campus roads, drinking water stations, campus wifi, auditorium, common areas.
-4. Department — Academic: labs, classrooms, projectors, AV/IT equipment, software licences, faculty/teaching, curriculum, exams, practicals, seminar halls, department office, printers for academic use.
-5. Disciplinary Committee — Ragging, physical assault, sexual harassment, bullying, threats, cheating/malpractice in exams, academic dishonesty, plagiarism, unfair means.
+ROUTING DECISION — follow steps in order, stop at first match:
 
-DECISION RULES — apply strictly in order:
+STEP 1 — Check for ACADEMIC content → "Department":
+Does the complaint mention ANY of: lab, computer lab, classroom, projector, AV system, seminar hall, printer (academic use), software license, IDE software, faculty, professor, HOD, lecture, practicals, curriculum, timetable, project submission, department office, IT equipment in academic building?
+→ YES → Category = "Department"
+CRITICAL: A hostel resident complaining about a lab/projector/printer/seminar hall = "Department", NOT "Men's Hostel" or "Women's Hostel". The student's gender and hostel status are IRRELEVANT for this step.
 
-RULE 1 — ACADEMIC = DEPARTMENT (highest priority rule):
-Any mention of: lab, classroom, lecture hall, projector, computer lab, software, AV system, printer (academic), faculty, professor, HOD, timetable, exam schedule, curriculum, practicals, internship, project submission, seminar hall, department office
-→ ALWAYS "Department", regardless of where the student lives.
-A male hostel resident complaining about a CSE lab = "Department", NOT "Men's Hostel".
+STEP 2 — Check for MISCONDUCT/VIOLENCE → "Disciplinary Committee":
+Does it mention ANY of: ragging, bullying, physical fight, physical assault, altercation, brawl, violence between students, sexual harassment, threats, stalking, cheating in exam, copying, malpractice, plagiarism, academic dishonesty, impersonation, morphed photos or offensive posts targeting a specific person?
+→ YES → Category = "Disciplinary Committee"
 
-RULE 2 — EXAM MISCONDUCT = DISCIPLINARY COMMITTEE:
-Any mention of: cheating, cheat sheet, copying, malpractice, plagiarism, academic dishonesty, unfair means, exam paper leak, impersonation in exam
-→ ALWAYS "Disciplinary Committee", NOT "Department".
+STEP 3 — Check for HOSTEL FACILITY → hostel category:
+Is the issue physically INSIDE a hostel building: hostel rooms, hostel mess food, hostel laundry room, hostel bathrooms, hostel water/electricity supply, hostel maintenance, hostel warden, hostel security, hostel corridor/common room?
+(NOT campus canteen, NOT academic labs, NOT campus library building, NOT campus wifi)
+→ YES → Male student → "Men's Hostel" | Female student → "Women's Hostel"
 
-RULE 3 — RAGGING/HARASSMENT = DISCIPLINARY COMMITTEE:
-Ragging, physical threats, assault, sexual harassment, bullying (systematic), stalking
-→ "Disciplinary Committee".
+STEP 4 — Campus-wide facility → "General":
+Issues NOT inside hostel and NOT academic: canteen, library building, campus roads, parking lot, sports courts/grounds, campus wifi, auditorium, drinking water stations.
 
-RULE 4 — HOSTEL = HOSTEL FACILITIES ONLY:
-"Hostel" means complaints about things physically inside the hostel building: rooms, hostel mess food, hostel bathrooms, hostel water/power supply, hostel maintenance, hostel security staff.
-NOT: academic labs. NOT: campus canteen. NOT: classroom equipment.
-
-RULE 5 — GENDER DETERMINES MEN'S vs WOMEN'S HOSTEL:
-Gender is ONLY used to choose between Men's Hostel and Women's Hostel.
-It NEVER converts a Department/General/DC complaint into a hostel complaint.
-
-DEPARTMENT DETECTION:
+DEPARTMENT DETECTION (when category = "Department"):
 Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
-- If complaint names a specific dept/lab (e.g. "ECE lab", "mechanical workshop"), target that dept
-- Cross-dept: ECE student complaining about CSE lab → target_department = "CSE"
-- Default: use student's department ({department})
+- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE department printer") → use that dept code
+- Cross-dept OK: ECE student complaining about CSE lab → target_department = "CSE"
+- Default: use student's home department ({department})
 
 PRIORITY:
-- Critical: immediate safety danger, injury risk
-- High: many students affected, key facility down, exam impacted
-- Medium: moderate disruption
+- Critical: immediate safety danger or injury risk
+- High: many students affected, exam disrupted, key facility completely down
+- Medium: moderate disruption to a subset of students
 - Low: minor inconvenience
 
 Respond ONLY with valid JSON (no markdown, no code blocks):
@@ -261,6 +253,51 @@ JSON:"""
         
         return True
     
+    # Keywords that unambiguously indicate an academic/department issue.
+    # If the LLM returns a hostel category but the text contains any of these,
+    # we override to "Department" — this is deterministic and safe because these
+    # phrases never appear in genuine hostel complaints.
+    _ACADEMIC_OVERRIDE_KEYWORDS = [
+        "lab ",       " lab",        "labs ",       "laboratory",
+        "computer lab","cse lab",     "ece lab",     "it lab",
+        "eee lab",    "mech lab",    "bio lab",     "aero lab",
+        "seminar hall","lecture hall","classroom",
+        "department office", "dept office",
+        "faculty",    "professor",   " hod ",       "head of department",
+        "lab record", "observation book", "lab observation",
+        "project report", "project submission",
+        "timetable",  "exam schedule", "course",    "curriculum",
+        "software license", "software licence", "ide software",
+        "av system",  "av technician", "projector",
+        "server room","computing cluster", "lab in-charge",
+        "oscilloscope","pcb ",        "fabrication lab", "workshop",
+        "practicals", "practical exam",
+        "printer" ,   "printing",
+    ]
+
+    def _apply_academic_override(self, text: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Deterministic post-processing override.
+        If the LLM returned a hostel category but the complaint text contains
+        strong academic/department-facility keywords, reclassify as Department.
+        This catches the common model bias where male/female hostel students get
+        their academic lab/classroom complaints routed to hostel.
+        """
+        if result.get("category") not in ("Men's Hostel", "Women's Hostel"):
+            return result   # Only override hostel mis-classifications
+
+        text_lower = text.lower()
+        for kw in self._ACADEMIC_OVERRIDE_KEYWORDS:
+            if kw in text_lower:
+                original = result["category"]
+                result["category"] = "Department"
+                logger.info(
+                    f"Academic override: '{original}' → 'Department' "
+                    f"(triggered by keyword '{kw.strip()}')"
+                )
+                break
+        return result
+
     def _fallback_categorization(self, text: str, context: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Fallback categorization using keyword matching with student context and department detection"""
         text_lower = text.lower()
@@ -341,12 +378,7 @@ JSON:"""
                 selected_priority = priority
                 break
 
-        logger.info(
-            f"Fallback categorization: {selected_category} (Priority: {selected_priority}, "
-            f"Target Dept: {target_department})"
-        )
-
-        return {
+        fallback_result = {
             "category": selected_category,
             "target_department": target_department,
             "priority": selected_priority,
@@ -356,6 +388,15 @@ JSON:"""
             "requires_image": any(word in text_lower for word in ["broken", "damaged", "leaking", "dirty"]),
             "status": "Fallback"
         }
+
+        # Apply same deterministic academic override to fallback path
+        fallback_result = self._apply_academic_override(text, fallback_result)
+
+        logger.info(
+            f"Fallback categorization: {fallback_result['category']} (Priority: {selected_priority}, "
+            f"Target Dept: {target_department})"
+        )
+        return fallback_result
     
     # ==================== REPHRASING ====================
     
@@ -671,20 +712,20 @@ Complaint:
 
 Image IS REQUIRED only for:
 - Something physically broken or structurally damaged (broken furniture, cracked walls, burst pipes)
-- Visible pests/insects present (cockroaches seen, rats sighted)
 - Exposed electrical hazards (dangling wires, sparking sockets)
-- Visible facility damage (broken doors/windows, large stains, visible mould)
+- Visible facility damage (broken doors/windows, large stains, visible mould, water leaking)
 
 Image is NOT REQUIRED for:
-- Absent or insufficient staff (no cleaning staff deployed, guard absent, duty not performed)
-- Schedule or policy violations (timings changed, rules not followed, notice not given)
-- Service failures (repairs not done despite reports, no response from management)
-- Academic or interpersonal issues (faculty, exams, harassment, bullying)
-- Complaints about waiting for action (already reported, still not resolved)
-- Any complaint describing LACK OF SERVICE rather than a visible physical problem
+- Pest/hygiene reports (rats sighted, cockroaches present, insects seen) — these are service requests; you cannot photograph pests on demand
+- Absent or insufficient staff (no cleaning staff, guard absent, night duty not performed)
+- Schedule or policy violations (timings changed, rules not followed, no notice given)
+- Service failures (repairs not done despite reports, no response from management, equipment non-functional)
+- Academic or interpersonal issues (faculty problems, exams, harassment, bullying, ragging)
+- Complaints about waiting for action (already reported but not resolved)
+- Any complaint describing a service failure, scheduling issue, or lack of action
 
-DEFAULT: Set image_required = false unless the complaint EXPLICITLY describes a visible physical condition that can ONLY be verified by a photo.
-When uncertain, always choose false — do not block legitimate complaints.
+DEFAULT: image_required = false unless the complaint explicitly describes visible structural damage that a photo would prove.
+When uncertain, ALWAYS choose false — never block a legitimate complaint over an image.
 
 Respond ONLY with valid JSON (no markdown):
 {{
