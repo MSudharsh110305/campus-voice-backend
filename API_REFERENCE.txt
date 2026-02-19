@@ -158,6 +158,7 @@ Public routes (no token required):
   priority            VARCHAR(20)     NOT NULL  CHECK: 'Low'|'Medium'|'High'|'Urgent'
   visibility          VARCHAR(50)     NOT NULL
                                       CHECK: 'Department'|'Year'|'Hostel'|'Day Scholar'|'All Students'
+  target_gender       ARRAY(VARCHAR)  NULLABLE
   target_departments  ARRAY(VARCHAR)  NULLABLE
   target_years        ARRAY(VARCHAR)  NULLABLE
   target_stay_types   ARRAY(VARCHAR)  NULLABLE
