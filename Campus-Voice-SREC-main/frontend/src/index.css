@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App base styles */
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  @apply bg-background text-gray-800 antialiased;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Success Animation Styles */
+@keyframes drawCircle {
+  from {
+    stroke-dashoffset: 339.292;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes checkmark {
+  from {
+    stroke-dashoffset: 40;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-drawCircle {
+  animation: drawCircle 0.6s ease-out forwards;
+}
+
+.animate-checkmark {
+  animation: checkmark 0.5s ease-out 0.6s forwards;
+}
+
+.animate-fadeInDelay {
+  animation: fadeIn 0.6s ease-out 1.2s forwards;
+  opacity: 0;
+}
+
+
+
+
+
+
+body {
+  background-color: #F8FAF8;
+}

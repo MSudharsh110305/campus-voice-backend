@@ -1,0 +1,105 @@
+import { api } from '../utils/api';
+
+// Authority Management
+const createAuthority = async (authorityData) => {
+    return await api('/admin/authorities', {
+        method: 'POST',
+        body: JSON.stringify(authorityData),
+    });
+};
+
+const getAllAuthorities = async (skip = 0, limit = 50, is_active = null) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (is_active !== null) params.append('is_active', is_active);
+    return await api(`/admin/authorities?${params}`);
+};
+
+const toggleAuthorityActive = async (authorityId, activate) => {
+    const params = new URLSearchParams({ activate });
+    return await api(`/admin/authorities/${authorityId}/toggle-active?${params}`, {
+        method: 'PUT',
+    });
+};
+
+const deleteAuthority = async (authorityId) => {
+    return await api(`/admin/authorities/${authorityId}`, {
+        method: 'DELETE',
+    });
+};
+
+// Student Management
+const getAllStudents = async (skip = 0, limit = 50, is_active = null, department_id = null) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (is_active !== null) params.append('is_active', is_active);
+    if (department_id) params.append('department_id', department_id);
+    return await api(`/admin/students?${params}`);
+};
+
+const toggleStudentActive = async (rollNo, activate) => {
+    const params = new URLSearchParams({ activate });
+    return await api(`/admin/students/${rollNo}/toggle-active?${params}`, {
+        method: 'PUT',
+    });
+};
+
+// System Stats
+const getSystemOverview = async () => {
+    console.log('📡 API Call: GET /admin/stats/overview');
+    const response = await api('/admin/stats/overview');
+    console.log('📡 Response:', response);
+    return response;
+};
+
+const getAnalytics = async (days = 30) => {
+    const params = new URLSearchParams({ days });
+    return await api(`/admin/stats/analytics?${params}`);
+};
+
+// Bulk Operations
+const bulkStatusUpdate = async (complaintIds, newStatus, reason) => {
+    const params = new URLSearchParams({
+        new_status: newStatus,
+        reason
+    });
+    complaintIds.forEach(id => params.append('complaint_ids', id));
+
+    return await api(`/admin/complaints/bulk-status-update?${params}`, {
+        method: 'POST',
+    });
+};
+
+// Image Moderation
+const getPendingImageVerifications = async (skip = 0, limit = 20) => {
+    const params = new URLSearchParams({ skip, limit });
+    return await api(`/admin/images/pending-verification?${params}`);
+};
+
+const moderateImage = async (complaintId, approve, reason = null) => {
+    const params = new URLSearchParams({ approve });
+    if (reason) params.append('reason', reason);
+    return await api(`/admin/images/${complaintId}/moderate?${params}`, {
+        method: 'POST',
+    });
+};
+
+// Health Metrics
+const getHealthMetrics = async () => {
+    return await api('/admin/health/metrics');
+};
+
+const adminService = {
+    createAuthority,
+    getAllAuthorities,
+    toggleAuthorityActive,
+    deleteAuthority,
+    getAllStudents,
+    toggleStudentActive,
+    getSystemOverview,
+    getAnalytics,
+    bulkStatusUpdate,
+    getPendingImageVerifications,
+    moderateImage,
+    getHealthMetrics,
+};
+
+export default adminService;

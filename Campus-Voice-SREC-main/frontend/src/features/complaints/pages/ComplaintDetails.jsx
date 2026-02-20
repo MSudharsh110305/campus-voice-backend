@@ -1,0 +1,665 @@
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { TopNav } from '../../../components/Navbars';
+import { useAuth } from '../../../context/AuthContext';
+import complaintService from '../../../services/complaint.service';
+import { VOTE_TYPES } from '../../../utils/constants';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight } from 'lucide-react';
+import { Skeleton, Card, Badge, Button } from '../../../components/UI';
+import { format } from 'date-fns';
+
+export default function ComplaintDetails() {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { user } = useAuth();
+    const [complaint, setComplaint] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [userVote, setUserVote] = useState(null);
+    const [isVoting, setIsVoting] = useState(false);
+
+    const [imageUrl, setImageUrl] = useState(null);
+    const [imageLoading, setImageLoading] = useState(false);
+    const [history, setHistory] = useState([]);
+    const [timeline, setTimeline] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+    const fetchHistory = async () => {
+        try {
+            setLoadingHistory(true);
+            const data = await complaintService.getComplaintStatusHistory(id);
+            setHistory(Array.isArray(data) ? data : data?.history || []);
+        } catch (error) {
+            console.log("Could not fetch status history:", error.message);
+            setHistory([]);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    const fetchTimeline = async () => {
+        try {
+            setLoadingTimeline(true);
+            const data = await complaintService.getComplaintTimeline(id);
+            setTimeline(Array.isArray(data) ? data : data?.timeline || []);
+        } catch (error) {
+            console.log("Could not fetch timeline:", error.message);
+            setTimeline([]);
+        } finally {
+            setLoadingTimeline(false);
+        }
+    };
+
+    useEffect(() => {
+        let active = true;
+        if (complaint?.has_image) {
+            setImageLoading(true);
+            complaintService.fetchImage(id, false)
+                .then(url => {
+                    if (active) setImageUrl(url);
+                })
+                .catch(err => {
+                    console.log("Could not fetch image:", err.message);
+                    if (active) setImageUrl(null);
+                })
+                .finally(() => {
+                    if (active) setImageLoading(false);
+                });
+        }
+
+        return () => {
+            active = false;
+            if (imageUrl) {
+                URL.revokeObjectURL(imageUrl);
+            }
+        };
+    }, [id, complaint?.has_image]);
+
+    useEffect(() => {
+        const fetchDetails = async () => {
+            try {
+                setLoading(true);
+                console.log('🔍 Fetching complaint details for ID:', id);
+
+                const data = await complaintService.getComplaintDetails(id);
+                console.log('✅ Complaint details fetched:', data);
+                setComplaint(data);
+
+                // Fetch user's vote with delay to avoid rate limiting
+                setTimeout(async () => {
+                    try {
+                        const voteData = await complaintService.getMyVote(id);
+                        setUserVote(voteData.has_voted ? voteData.vote_type : null);
+                    } catch (voteError) {
+                        console.log("Could not fetch vote status:", voteError.message);
+                    }
+                }, 300);
+
+                // Fetch history and timeline with delays
+                setTimeout(fetchHistory, 500);
+                setTimeout(fetchTimeline, 700);
+            } catch (err) {
+                console.error('❌ Failed to fetch complaint details:', err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (id) {
+            fetchDetails();
+        }
+    }, [id]);
+
+    const handleVote = async (type) => {
+        if (!user?.roll_no) {
+            alert("Please login to vote");
+            return;
+        }
+        if (isVoting) return;
+
+        setIsVoting(true);
+
+        // Store previous state for rollback
+        const prevVote = userVote;
+        const prevComplaint = { ...complaint };
+
+        // Optimistic UI update
+        const isRemoving = userVote === type;
+        let newUpvotes = complaint.upvotes || 0;
+        let newDownvotes = complaint.downvotes || 0;
+
+        if (isRemoving) {
+            // Removing vote
+            if (type === 'upvote') newUpvotes--;
+            else newDownvotes--;
+            setUserVote(null);
+        } else {
+            // Adding or changing vote
+            if (prevVote === 'upvote') newUpvotes--;
+            if (prevVote === 'downvote') newDownvotes--;
+            if (type === 'upvote') newUpvotes++;
+            else newDownvotes++;
+            setUserVote(type);
+        }
+
+        setComplaint({
+            ...complaint,
+            upvotes: Math.max(0, newUpvotes),
+            downvotes: Math.max(0, newDownvotes),
+            net_votes: newUpvotes - newDownvotes
+        });
+
+        try {
+            let response;
+
+            // If clicking same vote type, remove vote
+            if (isRemoving) {
+                response = await complaintService.removeVote(id);
+            } else {
+                // Add or change vote
+                response = await complaintService.voteOnComplaint(id, type);
+            }
+
+            // Update with actual backend response
+            setComplaint({
+                ...complaint,
+                upvotes: response.upvotes,
+                downvotes: response.downvotes,
+                net_votes: response.upvotes - response.downvotes,
+                priority: response.priority
+            });
+            setUserVote(response.user_vote);
+
+        } catch (error) {
+            console.error("Vote failed:", error);
+
+            // Rollback optimistic update
+            setComplaint(prevComplaint);
+            setUserVote(prevVote);
+
+            // Show user-friendly error message
+            const errorMsg = error.message?.toLowerCase();
+            if (errorMsg?.includes('greenlet') || errorMsg?.includes('sqlalchemy')) {
+                alert("Server is temporarily busy. Please try again in a moment.");
+            } else if (errorMsg?.includes('rate limit')) {
+                alert("Too many requests. Please wait a moment and try again.");
+            } else {
+                alert("Failed to register vote. Please try again.");
+            }
+        } finally {
+            setIsVoting(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gray-50">
+                <TopNav />
+                <div className="max-w-3xl mx-auto p-6 pt-10">
+                    <Skeleton className="h-64 rounded-xl mb-6" />
+                    <Skeleton className="h-10 w-1/3 mb-4" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-2/3" />
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !complaint) {
+        const isRateLimitError = error && error.toLowerCase().includes('rate limit');
+
+        return (
+            <div className="min-h-screen bg-gray-50">
+                <TopNav />
+                <div className="max-w-3xl mx-auto p-6 pt-20 text-center">
+                    {isRateLimitError ? (
+                        <>
+                            <div className="mb-4 text-6xl">⏱️</div>
+                            <h2 className="text-xl font-bold text-gray-800 mb-2">Too Many Requests</h2>
+                            <p className="text-gray-500 mb-6">
+                                The server is experiencing high traffic. Please wait a moment and try again.
+                            </p>
+                            <div className="flex gap-3 justify-center">
+                                <button
+                                    onClick={() => window.location.reload()}
+                                    className="px-4 py-2 bg-srec-primary text-white rounded-lg hover:bg-srec-primaryHover transition"
+                                >
+                                    Retry
+                                </button>
+                                <button
+                                    onClick={() => navigate(-1)}
+                                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                                >
+                                    Go Back
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <h2 className="text-xl font-bold text-gray-800 mb-2">Complaint Not Found</h2>
+                            <p className="text-gray-500 mb-6">{error || "The complaint you're looking for doesn't exist or you don't have permission to view it."}</p>
+                            <button
+                                onClick={() => navigate(-1)}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                            >
+                                Go Back
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    const isAdmin = user?.role === 'Admin';
+    const isOwner = user?.roll_no && complaint.student_roll_no && user.roll_no === complaint.student_roll_no;
+
+    // Sanitize timeline descriptions to protect student identity
+    const sanitizeDescription = (description) => {
+        if (!description || isAdmin) return description;
+
+        // Replace patterns like "Complaint raised by [Name]" with "Complaint raised by Student"
+        return description
+            .replace(/raised by [A-Za-z\s]+$/i, 'raised by Student')
+            .replace(/submitted by [A-Za-z\s]+$/i, 'submitted by Student')
+            .replace(/created by [A-Za-z\s]+$/i, 'created by Student')
+            .replace(/by [A-Z][a-z]+ [A-Z][a-z]+/g, 'by Student');
+    };
+
+    // Sanitize names in timeline updated_by field
+    const sanitizeName = (name) => {
+        if (!name || isAdmin) return name;
+
+        // If it looks like a student name (contains spaces, proper case), hide it
+        if (/^[A-Z][a-z]+ [A-Z][a-z]+/.test(name)) {
+            return 'Student';
+        }
+        return name; // Keep authority/admin names
+    };
+
+    return (
+        <div className="min-h-screen bg-srec-background">
+            <TopNav />
+
+            <div className="max-w-3xl mx-auto p-4 sm:p-6 pb-24 md:pl-24 transition-all duration-300">
+                <button
+                    onClick={() => navigate(-1)}
+                    className="mb-6 flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-srec-primary transition-colors"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                    Back to Feed
+                </button>
+
+                <Card className="overflow-hidden shadow-neu-flat">
+                    {complaint?.has_image && (
+                        <div className="relative bg-gray-100">
+                            {imageLoading ? (
+                                <Skeleton className="w-full h-64 sm:h-96" />
+                            ) : imageUrl ? (
+                                <>
+                                    <img
+                                        src={imageUrl}
+                                        alt={complaint.title}
+                                        className="w-full h-64 sm:h-96 object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
+                                </>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-64 sm:h-96 text-gray-400">
+                                    <FileX size={48} strokeWidth={1.5} />
+                                    <span className="text-sm mt-2">Image failed to load</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="p-6 sm:p-10">
+
+                        {/* Header: Status and Metadata */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                            <div className="flex flex-wrap gap-2">
+                                <Badge type={complaint.status} variant="status">{complaint.status || 'Pending'}</Badge>
+                                {complaint.priority && (
+                                    <Badge type={complaint.priority} variant="priority">{complaint.priority} Priority</Badge>
+                                )}
+                            </div>
+                            <span className="text-xs font-medium text-gray-400">
+                                {new Date(complaint.submitted_at || complaint.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                            </span>
+                        </div>
+
+                        {/* Category & Metadata */}
+                        <div className="flex flex-wrap items-center gap-2 mb-8 text-sm">
+                            <Badge type={complaint.category} variant="category">
+                                {complaint.category || 'General'}
+                            </Badge>
+                            {complaint.department_code && (
+                                <Badge variant="category" className="bg-blue-50 text-blue-700 border-blue-200">
+                                    {complaint.department_code}
+                                </Badge>
+                            )}
+                            {complaint.cross_department && (
+                                <Badge variant="category" className="bg-orange-50 text-orange-700 border-orange-200">
+                                    Cross-Department
+                                </Badge>
+                            )}
+                            <span className="text-gray-400">•</span>
+                            <span className="text-gray-500">Visibility: <span className="font-semibold text-gray-700 capitalize">{complaint.visibility}</span></span>
+                        </div>
+
+                        {/* Content display based on ownership */}
+                        <div className="mb-10">
+                            {isOwner ? (
+                                <>
+                                    {/* Owner view: Show both original text and AI rephrased text */}
+                                    {complaint.original_text && (
+                                        <div className="mb-6">
+                                            <div className="mb-2 uppercase tracking-wider text-xs font-bold text-gray-500">
+                                                Your Submitted Complaint
+                                            </div>
+                                            <div className="prose prose-green max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg p-4 border border-gray-100">
+                                                {complaint.original_text}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {complaint.rephrased_text && (
+                                        <div>
+                                            <div className="mb-2 uppercase tracking-wider text-xs font-bold text-srec-primary flex items-center gap-1.5">
+                                                <span>✨ AI Rephrased Summary</span>
+                                            </div>
+                                            <div className="prose prose-green max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                                {complaint.rephrased_text}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    {/* Public view: Only show AI rephrased text */}
+                                    {complaint.rephrased_text && (
+                                        <div className="mb-2 uppercase tracking-wider text-xs font-bold text-srec-primary flex items-center gap-1.5">
+                                            <span>✨ AI Reviewed Complaint</span>
+                                        </div>
+                                    )}
+                                    <div className="prose prose-green max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                        {complaint.rephrased_text || 'No description available.'}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* LLM Failure Warning */}
+                        {complaint.llm_failed && (
+                            <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <p className="text-sm text-yellow-800 font-medium">
+                                    ⚠️ AI analysis is temporarily unavailable. This complaint is under manual review.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Voting & Interaction - Enhanced */}
+                        <div className="py-6 border-t border-b border-gray-100 mb-8 bg-gradient-to-r from-gray-50/50 to-transparent -mx-6 sm:-mx-10 px-6 sm:px-10">
+                            <div className="flex flex-wrap items-center gap-4">
+                                {/* Upvote Button */}
+                                <button
+                                    onClick={() => handleVote(VOTE_TYPES.UPVOTE)}
+                                    disabled={isVoting}
+                                    className={
+                                        `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.UPVOTE
+                                            ? 'bg-srec-primary text-white border-srec-primary shadow-md'
+                                            : 'bg-srec-primary/5 border-srec-primary/20 hover:bg-srec-primary/10'
+                                        } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
+                                    }
+                                >
+                                    <ThumbsUp size={18} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
+                                    <span className="font-bold">{complaint.upvotes || 0}</span>
+                                </button>
+
+                                {/* Downvote Button */}
+                                <button
+                                    onClick={() => handleVote(VOTE_TYPES.DOWNVOTE)}
+                                    disabled={isVoting}
+                                    className={
+                                        `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.DOWNVOTE
+                                            ? 'bg-srec-danger text-white border-srec-danger shadow-md'
+                                            : 'bg-srec-danger/5 border-srec-danger/20 hover:bg-srec-danger/10'
+                                        } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
+                                    }
+                                >
+                                    <ThumbsDown size={18} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
+                                    <span className="font-bold text-gray-700">{complaint.downvotes || 0}</span>
+                                </button>
+
+                                {/* Net Score */}
+                                <div className="text-sm text-gray-500 ml-auto font-medium bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
+                                    Net Score: <span className={`font-bold ${complaint.net_votes > 0 ? 'text-green-600' : complaint.net_votes < 0 ? 'text-red-500' : 'text-gray-900'}`}>{complaint.net_votes || 0}</span>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-4 font-medium">
+                                👆 Votes help authorities prioritise this issue
+                            </p>
+                        </div>
+
+                        {/* Details Grid */}
+                        <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-6 mb-8 p-6 rounded-xl border border-gray-100 bg-gray-50/50`}>
+                            {/* Student Info Section */}
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                    <ShieldAlert size={16} /> Complaint Author
+                                </h3>
+                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-srec-primary/10 flex items-center justify-center text-srec-primary font-bold">
+                                            S
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-gray-900">
+                                                {isAdmin ? complaint.student_roll_no : 'Student'}
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                                {isAdmin ? 'Full identity visible to authorities' : 'Identity protected'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Complaint Metadata */}
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                    <FileText size={16} /> Reference Info
+                                </h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Status</div>
+                                        <Badge type={complaint.status} variant="status">{complaint.status || 'Pending'}</Badge>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Priority</div>
+                                        <Badge type={complaint.priority} variant="priority">{complaint.priority || 'Normal'}</Badge>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Raised On</div>
+                                        <div className="text-sm font-bold text-gray-700">
+                                            {format(new Date(complaint.created_at || complaint.submitted_at), 'dd MMM yyyy')}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Complaint ID</div>
+                                        <div className="text-sm font-mono font-bold text-gray-700">#{complaint.id?.toString().slice(-6).toUpperCase()}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Timeline & History Section */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                            {/* --- Timeline View --- */}
+                            <div className="space-y-6">
+                                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 px-2">
+                                    <Clock className="text-srec-primary" size={20} /> Complaint Timeline
+                                </h3>
+                                <div className="relative pl-6 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
+                                    {loadingTimeline ? (
+                                        [1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)
+                                    ) : timeline.length > 0 ? (
+                                        timeline.map((event, idx) => (
+                                            <div key={idx} className="relative">
+                                                <div className={`absolute -left-[23px] top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm ring-4 ring-white ${idx === 0 ? 'bg-srec-primary scale-125' : 'bg-gray-300'
+                                                    }`} />
+                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-neu-soft hover:shadow-neu-flat transition-all group">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <h4 className="font-bold text-gray-900 group-hover:text-srec-primary transition-colors">
+                                                            {event.event}
+                                                        </h4>
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+                                                            {format(new Date(event.timestamp), 'h:mm a')}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 leading-relaxed mb-2">
+                                                        {sanitizeDescription(event.description)}
+                                                    </p>
+                                                    <div className="flex flex-wrap gap-2 items-center text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-50">
+                                                        <div className="font-medium bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
+                                                            {format(new Date(event.timestamp), 'MMM dd, yyyy')}
+                                                        </div>
+                                                        {event.updated_by && (
+                                                            <div className="flex items-center gap-1">
+                                                                <span className="text-gray-300">•</span>
+                                                                <span>By: <span className="text-gray-600 font-semibold">{sanitizeName(event.updated_by)}</span></span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-10 text-gray-400 italic">No timeline events recorded</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* --- Status History --- */}
+                            <div className="space-y-6">
+                                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 px-2">
+                                    <History className="text-srec-primary" size={20} /> Status History
+                                </h3>
+                                <div className="space-y-4">
+                                    {loadingHistory ? (
+                                        [1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
+                                    ) : history.length > 0 ? (
+                                        history.map((update, idx) => (
+                                            <div key={idx} className="bg-srec-card p-5 rounded-2xl border border-gray-200 shadow-neu-inset transition-all hover:translate-x-1">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <Badge type={update.old_status} variant="status" className="opacity-60 grayscale-[0.5] scale-90">{update.old_status}</Badge>
+                                                    <ChevronRight size={14} className="text-gray-300" />
+                                                    <Badge type={update.new_status} variant="status" className="scale-105 shadow-sm font-bold">{update.new_status}</Badge>
+                                                </div>
+
+                                                {update.reason && (
+                                                    <div className="relative mb-4">
+                                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-srec-primary rounded-full" />
+                                                        <p className="pl-4 text-sm text-gray-600 italic font-medium leading-relaxed">
+                                                            "{update.reason}"
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-srec-primary/10 flex items-center justify-center text-[10px] font-bold text-srec-primary">
+                                                            {sanitizeName(update.updated_by)?.[0] || 'A'}
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-700">{sanitizeName(update.updated_by)}</span>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-gray-400 capitalize bg-white px-2 py-0.5 rounded shadow-sm border border-gray-50">
+                                                        {format(new Date(update.updated_at), 'MMM dd, yyyy • h:mm a')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-gray-400 italic">
+                                            Initial submission pending review
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Quick Legend */}
+                                {history.length > 0 && (
+                                    <div className="p-4 bg-blue-50/30 rounded-xl border border-blue-100/50 flex items-start gap-3">
+                                        <AlertCircle size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                                        <p className="text-[11px] text-blue-700 leading-tight">
+                                            Status updates are made by verified authorities. Each change affects the resolution priority and department assignment of your complaint.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Image Verification Section */}
+                        {complaint.has_image && complaint.image_verification_status && (
+                            <div className="mt-8 p-6 bg-gradient-to-br from-blue-50 to-white rounded-xl border border-blue-100 shadow-sm">
+                                <h3 className="text-sm font-bold text-blue-900 mb-2">
+                                    Image Verification
+                                </h3>
+                                <div className="space-y-2 text-sm">
+                                    <p className="flex items-center gap-2">
+                                        <span className={`inline-block w-2 h-2 rounded-full ${complaint.image_verified ? 'bg-green-500' : 'bg-orange-500'}`}></span>
+                                        <span className="font-medium text-gray-700">Status:</span>
+                                        <span className={complaint.image_verified ? 'text-green-700' : 'text-orange-700'}>
+                                            {complaint.image_verification_status}
+                                        </span>
+                                    </p>
+                                    {complaint.image_verification_message && (
+                                        <p className="text-gray-600 leading-relaxed">
+                                            {complaint.image_verification_message}
+                                        </p>
+                                    )}
+                                    {complaint.image_was_required && complaint.image_requirement_reasoning && (
+                                        <p className="text-xs text-gray-500 italic mt-2">
+                                            Image was required: {complaint.image_requirement_reasoning}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Escalation Information */}
+                        {complaint.escalation_level && complaint.escalation_level > 0 && (
+                            <div className="mt-8 p-6 bg-gradient-to-br from-red-50 to-white rounded-xl border border-red-100 shadow-sm">
+                                <h3 className="text-sm font-bold text-red-900 mb-2">
+                                    ⚠️ Escalated Complaint
+                                </h3>
+                                <div className="space-y-2 text-sm">
+                                    <p className="flex justify-between">
+                                        <span className="text-gray-600">Escalation Level:</span>
+                                        <span className="font-semibold text-red-700">{complaint.escalation_level}</span>
+                                    </p>
+                                    {complaint.escalation_reason && (
+                                        <p className="text-gray-700">
+                                            <span className="font-medium">Reason:</span> {complaint.escalation_reason}
+                                        </p>
+                                    )}
+                                    {complaint.escalated_by && (
+                                        <p className="text-gray-600">
+                                            <span className="font-medium">Escalated by:</span> {sanitizeName(complaint.escalated_by)}
+                                        </p>
+                                    )}
+                                    {complaint.escalated_at && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            Escalated on {new Date(complaint.escalated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}

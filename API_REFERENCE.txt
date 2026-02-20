@@ -1,12 +1,17 @@
 ================================================================================
   CAMPUSVOICE API REFERENCE
   Backend: FastAPI (async) | PostgreSQL | Groq LLM | JWT Auth
-  Base URL: http://localhost:8000/api
+  Base URL (local dev):  http://localhost:8000/api
+  Base URL (production): https://campusvoice-api-h528.onrender.com/api
   Version: Current (425 combined tests, 97.9% pass rate)
 ================================================================================
 
 This document is intended for frontend developers integrating with the
 CampusVoice backend. It covers all existing, implemented endpoints only.
+
+Swagger / OpenAPI interactive docs (development only):
+  http://localhost:8000/docs        <- Try endpoints in browser
+  http://localhost:8000/redoc       <- Read-only reference UI
 
 ────────────────────────────────────────────────────────────────────────────────
   CONTENTS
@@ -96,6 +101,8 @@ Public routes (no token required):
   verification_token VARCHAR(255)   NULLABLE
   created_at         TIMESTAMPTZ    NOT NULL
   updated_at         TIMESTAMPTZ    NOT NULL
+
+  NOTE: Students do NOT have a phone column. Only Authority accounts have phone.
 
 --- TABLE: authorities ---
   id              BIGINT          PK, auto-increment
@@ -356,7 +363,10 @@ A1. Register Student
     gender        string   REQUIRED  "Male" | "Female" | "Other"
     stay_type     string   REQUIRED  "Hostel" | "Day Scholar"
     department_id integer  REQUIRED  1-13 (must exist in DB)
-    year          integer  optional  1-10 (1-4 undergrad, 5+ postgrad)
+    year          integer  REQUIRED  1-10 (1-4 undergrad, 5+ postgrad)
+                                     IMPORTANT: Although the Pydantic schema marks this
+                                     as optional, omitting it causes a 500 error because
+                                     the database column is NOT NULL. Always provide year.
 
   Response 201:
     roll_no         string
@@ -364,7 +374,7 @@ A1. Register Student
     email           string
     gender          string
     stay_type       string
-    year            integer | null
+    year            integer
     department_id   integer | null
     department_name string | null
     token           string    JWT token
@@ -391,6 +401,9 @@ A2. Student Login
   Response 200:  (same shape as register response — includes JWT token)
     roll_no, name, email, gender, stay_type, year, department_id,
     department_name, token, token_type, expires_in
+
+  NOTE: department_code is NOT in the login/register response.
+        Call GET /api/students/profile (A3) after login to get department_code.
 
   Errors:
     401  Invalid email or password
@@ -426,8 +439,10 @@ A4. Update Student Profile
   Request body (all optional; send only fields you want to update):
     name   string   2-255 chars, no digits
     email  string   Must still be @srec.ac.in
-    phone  string   10-digit Indian mobile number (starts with 6-9)
     year   integer  1-10
+
+  NOTE: Phone cannot be updated for students (no phone column in students table).
+        Only Authority accounts have a phone field.
 
   Response 200:  StudentProfile (same as GET /profile)
 
@@ -663,7 +678,9 @@ B1. Submit Complaint  [RATE LIMITED: 5/day per student]
 
   Response 201:
     id                          string    UUID of created complaint
-    status                      string    "Submitted"
+    status                      string    "Submitted"  <- submission-only label; when you
+                                                          fetch the complaint via B3, its
+                                                          stored status will be "Raised"
     message                     string    Human-readable confirmation
     rephrased_text              string | null
     priority                    string    "Low"|"Medium"|"High"|"Critical"
@@ -939,7 +956,7 @@ B14. Advanced Complaint Filter
     is_verified   boolean  optional  true/false (image verification status)
 
   Applies same hostel visibility rules as public-feed.
-  Only Public + Department complaints included.
+  Only Public complaints included (same as B2 — Private complaints excluded).
 
   Response 200:  ComplaintListResponse (same as public-feed)
 
@@ -972,6 +989,8 @@ C1. Authority Login
 
   NOTE: Admin accounts (authority_type="Admin") use this same endpoint.
         JWT role = "Admin" for Admin accounts, "Authority" for all others.
+        department_code is NOT in this login response. Call GET /api/authorities/profile
+        (C2) after login if you need the department code (e.g. for HOD accounts).
 
   Errors:
     401  Invalid email or password
@@ -1640,6 +1659,17 @@ These three endpoints send parameters as URL query params, not JSON:
 Category is determined entirely by the AI backend.
 Do not show a category selector in the student complaint submission form.
 The assigned category is returned in the submission response.
+
+--- BASE URLS ---
+
+  Development:  http://localhost:8000/api
+  Production:   https://campusvoice-api-h528.onrender.com/api
+
+  Tip: Store the base URL in an environment variable/config so you can switch
+  between local and production without changing code.
+
+  Swagger UI (dev only): http://localhost:8000/docs
+  ReDoc UI  (dev only):  http://localhost:8000/redoc
 
 --- RATE LIMITING ---
 
