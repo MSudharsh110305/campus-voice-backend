@@ -471,15 +471,6 @@ async def update_complaint_status(
             reason=data.reason
         )
         
-        # ✅ NEW: Create notification for student
-        await notification_service.create_status_change_notification(
-            db=db,
-            complaint_id=complaint_id,
-            student_roll_no=complaint.student_roll_no,
-            old_status=complaint.status,
-            new_status=data.status
-        )
-        
         logger.info(f"Complaint {complaint_id} status updated to {data.status} by authority {authority_id}")
         
         return SuccessResponse(
@@ -1087,6 +1078,203 @@ async def get_authority_stats(
     }
     
     return AuthorityStats(**stats)
+
+
+@router.get(
+    "/stats/detailed",
+    summary="Get detailed authority statistics for executive dashboard",
+    description="Returns category breakdown, priority breakdown, resolution rate, and weekly trend"
+)
+async def get_authority_stats_detailed(
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import select, func, and_, case
+    from datetime import datetime, timezone, timedelta
+    from src.database.models import Complaint, ComplaintCategory
+
+    base = Complaint.assigned_authority_id == authority_id
+
+    # --- Category breakdown ---
+    cat_q = (
+        select(ComplaintCategory.name, func.count(Complaint.id).label("count"))
+        .join(ComplaintCategory, Complaint.category_id == ComplaintCategory.id)
+        .where(base)
+        .group_by(ComplaintCategory.name)
+    )
+    cat_res = await db.execute(cat_q)
+    by_category = {row.name: row.count for row in cat_res.all()}
+
+    # --- Priority breakdown ---
+    pri_q = (
+        select(Complaint.priority, func.count(Complaint.id).label("count"))
+        .where(base)
+        .group_by(Complaint.priority)
+    )
+    pri_res = await db.execute(pri_q)
+    by_priority = {row.priority: row.count for row in pri_res.all()}
+
+    # --- Status breakdown ---
+    stat_q = (
+        select(Complaint.status, func.count(Complaint.id).label("count"))
+        .where(base)
+        .group_by(Complaint.status)
+    )
+    stat_res = await db.execute(stat_q)
+    by_status = {row.status: row.count for row in stat_res.all()}
+
+    total = sum(by_status.values())
+    resolved = by_status.get("Resolved", 0) + by_status.get("Closed", 0)
+    resolution_rate = round((resolved / total * 100), 1) if total > 0 else 0.0
+
+    # --- Avg resolution time (hours) for resolved complaints ---
+    avg_q = select(
+        func.avg(
+            func.extract("epoch", Complaint.resolved_at - Complaint.submitted_at) / 3600
+        )
+    ).where(and_(
+        base,
+        Complaint.resolved_at.isnot(None),
+        Complaint.status.in_(["Resolved", "Closed"])
+    ))
+    avg_res = await db.execute(avg_q)
+    avg_hours = avg_res.scalar()
+    avg_hours = round(float(avg_hours), 1) if avg_hours else None
+
+    # --- Weekly trend (last 4 weeks, complaints submitted) ---
+    now = datetime.now(timezone.utc)
+    weeks = []
+    for i in range(3, -1, -1):
+        week_start = now - timedelta(weeks=i + 1)
+        week_end = now - timedelta(weeks=i)
+        wq = select(func.count()).where(and_(
+            base,
+            Complaint.submitted_at >= week_start,
+            Complaint.submitted_at < week_end,
+        ))
+        wr = await db.execute(wq)
+        weeks.append({
+            "label": f"W-{i}" if i > 0 else "This week",
+            "count": wr.scalar() or 0
+        })
+
+    return {
+        "total": total,
+        "by_category": by_category,
+        "by_priority": by_priority,
+        "by_status": by_status,
+        "resolution_rate": resolution_rate,
+        "avg_resolution_hours": avg_hours,
+        "weekly_trend": weeks,
+    }
+
+
+# ==================== NOTIFICATIONS (Authority/Admin) ====================
+
+@router.get(
+    "/notifications",
+    summary="Get authority notifications",
+    description="Get all notifications for the current authority or admin"
+)
+async def get_authority_notifications(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    unread_only: bool = Query(False),
+    current_authority=Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    authority_id = str(current_authority.id)
+
+    notifications = await notification_repo.get_by_recipient(
+        recipient_id=authority_id,
+        recipient_type="Authority",
+        skip=skip,
+        limit=limit,
+        unread_only=unread_only
+    )
+    total = await notification_repo.count_by_recipient(
+        recipient_id=authority_id,
+        recipient_type="Authority"
+    )
+    unread_count = await notification_repo.count_unread(
+        recipient_id=authority_id,
+        recipient_type="Authority"
+    )
+    from src.schemas.notification import NotificationResponse
+    return {
+        "notifications": [NotificationResponse.model_validate(n) for n in notifications],
+        "total": total,
+        "unread_count": unread_count,
+        "skip": skip,
+        "limit": limit
+    }
+
+
+@router.put(
+    "/notifications/{notification_id}/read",
+    summary="Mark authority notification as read"
+)
+async def mark_authority_notification_read(
+    notification_id: int,
+    current_authority=Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    authority_id = str(current_authority.id)
+
+    notification = await notification_repo.get(notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    if notification.recipient_id != authority_id or notification.recipient_type != "Authority":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    await notification_repo.mark_as_read(notification_id)
+    return {"success": True, "message": "Notification marked as read"}
+
+
+@router.put(
+    "/notifications/mark-all-read",
+    summary="Mark all authority notifications as read"
+)
+async def mark_all_authority_notifications_read(
+    current_authority=Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    authority_id = str(current_authority.id)
+
+    count = await notification_repo.mark_all_as_read(
+        recipient_id=authority_id,
+        recipient_type="Authority"
+    )
+    return {"success": True, "message": f"Marked {count} notifications as read"}
+
+
+@router.delete(
+    "/notifications/{notification_id}",
+    summary="Delete authority notification"
+)
+async def delete_authority_notification(
+    notification_id: int,
+    current_authority=Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    authority_id = str(current_authority.id)
+
+    notification = await notification_repo.get(notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    if notification.recipient_id != authority_id or notification.recipient_type != "Authority":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    await notification_repo.delete(notification_id)
+    return {"success": True, "message": "Notification deleted"}
 
 
 __all__ = ["router"]

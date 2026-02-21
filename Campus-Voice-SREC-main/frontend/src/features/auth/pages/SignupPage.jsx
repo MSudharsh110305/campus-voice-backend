@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { Button } from '../../../components/UI';
 import { DEPARTMENT_LIST, GENDER, STAY_TYPE } from '../../../utils/constants';
 
 export default function SignupPage() {
@@ -38,35 +37,29 @@ export default function SignupPage() {
   const validate = () => {
     const next = {};
 
-    // Name
     if (!form.name) next.name = 'Full name is required';
     else if (!nameRegex.test(form.name)) next.name = 'Name must be 2-255 chars, letters only';
 
-    // Roll No
     if (!form.roll_no) next.roll_no = 'Roll number is required';
     else if (!rollNoRegex.test(form.roll_no)) next.roll_no = 'Roll no must be 5-20 alphanumeric characters';
 
-    // Dropdowns
     if (!form.department_id) next.department_id = 'Select a department';
     if (!form.gender) next.gender = 'Select gender';
     if (!form.stay_type) next.stay_type = 'Select stay type';
 
-    // Year — REQUIRED (DB is NOT NULL even though Pydantic schema says optional)
     if (!form.year) {
-      next.year = 'Year is required (1-10)';
+      next.year = 'Year is required (1-5)';
     } else {
       const y = parseInt(form.year);
-      if (isNaN(y) || y < 1 || y > 10) next.year = 'Year must be between 1 and 10';
+      if (isNaN(y) || y < 1 || y > 5) next.year = 'Year must be between 1 and 5';
     }
 
-    // Email — must be @srec.ac.in
     if (!form.email) {
       next.email = 'Email is required';
     } else if (!form.email.toLowerCase().endsWith('@srec.ac.in')) {
       next.email = 'Email must be a valid @srec.ac.in address';
     }
 
-    // Password
     if (!form.password) next.password = 'Password is required';
     else if (!passwordRegex.test(form.password)) next.password = 'Min 8 chars with uppercase, lowercase, and digit';
 
@@ -106,32 +99,32 @@ export default function SignupPage() {
   };
 
   const inputClass = (error) => `
-    w-full rounded-xl border-0
-    bg-gray-50/50 shadow-inner
-    px-4 py-3 text-sm text-srec-textPrimary
+    w-full rounded-xl border ${error ? 'border-red-300 ring-2 ring-red-200' : 'border-gray-200'}
+    bg-gray-50/50 px-4 py-3 text-sm text-gray-900
     placeholder:text-gray-400
-    focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/50
+    focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary
     transition-all duration-200
-    ${error ? 'ring-2 ring-red-300' : ''}
   `;
 
   return (
-    <div className="min-h-screen bg-srec-background flex items-center justify-center px-4 py-10 transition-colors duration-300">
+    <div className="min-h-screen bg-srec-background flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-[500px]">
-        <div className="bg-white border border-srec-border rounded-2xl shadow-sm p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-srec-textPrimary tracking-tight">Create Account</h1>
-            <p className="text-gray-500 text-sm mt-1">Join CampusVoice today — use your @srec.ac.in email</p>
-          </div>
 
-          <form onSubmit={onSubmit} aria-label="Signup form" className="space-y-5">
+        {/* Brand */}
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-srec-primary tracking-tight">CampusVoice</h1>
+          <p className="text-gray-400 text-sm mt-1">Create your student account</p>
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-7">
+          <form onSubmit={onSubmit} aria-label="Signup form" className="space-y-4">
             {errors.form && (
-              <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 mb-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
                 {errors.form}
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <input
                   type="text"
@@ -156,14 +149,14 @@ export default function SignupPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <div className="relative">
                   <select
                     value={form.department_id}
                     onChange={update('department_id')}
                     aria-label="Department"
-                    className={`${inputClass(errors.department_id)} appearance-none`}
+                    className={`${inputClass(errors.department_id)} appearance-none pr-10`}
                   >
                     <option value="">Select Department</option>
                     {DEPARTMENT_LIST.map((d) => (
@@ -183,21 +176,21 @@ export default function SignupPage() {
                 <input
                   type="number"
                   min="1"
-                  max="10"
+                  max="5"
                   value={form.year}
                   onChange={update('year')}
                   aria-label="Student Year"
                   className={inputClass(errors.year)}
-                  placeholder="Year (1-10) *required"
+                  placeholder="Year (1-5)"
                 />
                 {errors.year && <p className="text-xs text-red-500 mt-1 ml-1">{errors.year}</p>}
               </div>
             </div>
 
-            {/* Gender Section */}
+            {/* Gender Selection */}
             <div>
-              <span className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide ml-1">Gender *</span>
-              <div className="flex gap-3">
+              <span className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Gender *</span>
+              <div className="flex gap-2">
                 {GENDER.map((g) => (
                   <button
                     key={g}
@@ -206,8 +199,8 @@ export default function SignupPage() {
                     className={`
                       flex-1 py-2.5 rounded-full text-sm font-medium transition-all duration-200
                       ${form.gender === g
-                        ? 'bg-srec-primary/10 text-srec-primary border border-srec-primary/30 shadow-inner'
-                        : 'bg-white text-gray-600 border border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:text-gray-900'}
+                        ? 'bg-srec-primary/10 text-srec-primary border border-srec-primary/30'
+                        : 'bg-white text-gray-500 border border-gray-200 hover:border-srec-primary/30 hover:text-srec-primary'}
                     `}
                   >
                     {g}
@@ -217,10 +210,10 @@ export default function SignupPage() {
               {errors.gender && <p className="text-xs text-red-500 mt-1 ml-1">{errors.gender}</p>}
             </div>
 
-            {/* Stay Type Section */}
+            {/* Stay Type Selection */}
             <div>
-              <span className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide ml-1">Stay Type *</span>
-              <div className="flex gap-3">
+              <span className="block text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Stay Type *</span>
+              <div className="flex gap-2">
                 {STAY_TYPE.map((s) => (
                   <button
                     key={s}
@@ -229,8 +222,8 @@ export default function SignupPage() {
                     className={`
                       flex-1 py-2.5 rounded-full text-sm font-medium transition-all duration-200
                       ${form.stay_type === s
-                        ? 'bg-srec-primary/10 text-srec-primary border border-srec-primary/30 shadow-inner'
-                        : 'bg-white text-gray-600 border border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:text-gray-900'}
+                        ? 'bg-srec-primary/10 text-srec-primary border border-srec-primary/30'
+                        : 'bg-white text-gray-500 border border-gray-200 hover:border-srec-primary/30 hover:text-srec-primary'}
                     `}
                   >
                     {s}
@@ -255,7 +248,7 @@ export default function SignupPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <input
                   type="password"
@@ -263,7 +256,7 @@ export default function SignupPage() {
                   onChange={update('password')}
                   aria-label="Password"
                   className={inputClass(errors.password)}
-                  placeholder="Password"
+                  placeholder="Password (min 8 chars)"
                 />
                 {errors.password && <p className="text-xs text-red-500 mt-1 ml-1">{errors.password}</p>}
               </div>
@@ -280,19 +273,18 @@ export default function SignupPage() {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs text-gray-400 mb-2 ml-1">
-                Password must contain 8+ characters, 1 uppercase, 1 lowercase, and 1 digit.
-              </p>
-              <Button type="submit" variant="primary" className="w-full py-3.5 mt-2" isLoading={isLoading}>
-                {isLoading ? 'Creating Account...' : 'Create Account'}
-              </Button>
-            </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 bg-srec-primary text-white font-semibold rounded-xl hover:bg-srec-primaryHover transition-all duration-200 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed text-sm mt-1"
+            >
+              {isLoading ? 'Creating Account...' : 'Create Account'}
+            </button>
           </form>
 
-          <div className="mt-8 text-center bg-white/50 backdrop-blur-sm rounded-xl border border-white/60 shadow-sm p-4">
-            <span className="text-gray-600 text-sm">Already have an account? </span>
-            <Link to="/login" className="text-srec-primary font-semibold hover:text-srec-primaryHover transition-colors">Sign in</Link>
+          <div className="mt-6 text-center">
+            <span className="text-gray-500 text-sm">Already have an account? </span>
+            <Link to="/login" className="text-srec-primary font-semibold hover:underline transition-colors">Sign in</Link>
           </div>
         </div>
       </div>

@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
-import { Card, Button } from '../../../components/UI';
+import { Card, Button, EliteButton } from '../../../components/UI';
 import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, Lock, FileX } from 'lucide-react';
-import { VISIBILITY } from '../../../utils/constants';
+import { Upload, X, Lock, FileX, Inbox } from 'lucide-react';
+import { VISIBILITY, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 
 export default function Posts() {
   const { user } = useAuth();
@@ -24,6 +24,7 @@ export default function Posts() {
   const [submitted, setSubmitted] = useState(false);
   const [apiResponse, setApiResponse] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -36,30 +37,26 @@ export default function Posts() {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate size (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image must be less than 5MB');
+        setFormError('Image must be less than 5MB');
         return;
       }
-      // Validate type
       const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Only JPEG, PNG, GIF, and WebP images are allowed');
+        setFormError('Only JPEG, PNG, GIF, and WebP images are allowed');
         return;
       }
+      setFormError('');
       setFormData({ ...formData, image: file });
       setImagePreview(URL.createObjectURL(file));
     }
   };
-
-
 
   useEffect(() => {
     const fetchMyComplaints = async () => {
       if (activeTab === 'mine') {
         try {
           const response = await studentService.getMyComplaints({ skip: 0, limit: 50 });
-          console.log('📋 My Complaints Response:', response);
           if (Array.isArray(response)) {
             setMyPosts(response);
           } else if (response && Array.isArray(response.complaints)) {
@@ -81,54 +78,39 @@ export default function Posts() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError('');
 
-    // Validate original_text
     if (!formData.original_text || formData.original_text.trim().length < 10) {
-      alert('Complaint text must be at least 10 characters.');
+      setFormError('Complaint text must be at least 10 characters.');
       return;
     }
 
     if (formData.original_text.length > 2000) {
-      alert('Complaint text must not exceed 2000 characters.');
+      setFormError('Complaint text must not exceed 2000 characters.');
       return;
     }
 
-    // Check for ALL CAPS
     const textWithoutSpaces = formData.original_text.replace(/\s/g, '');
     if (textWithoutSpaces === textWithoutSpaces.toUpperCase() && /[A-Z]/.test(textWithoutSpaces)) {
-      alert('Please avoid writing in ALL CAPS.');
+      setFormError('Please avoid writing in ALL CAPS.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Build FormData
       const fd = new FormData();
       fd.append('original_text', formData.original_text);
-      fd.append('visibility', formData.visibility); // "Private" or "Public"
+      fd.append('visibility', formData.visibility);
       if (formData.image) {
         fd.append('image', formData.image);
       }
 
       const response = await complaintService.submitComplaint(fd);
 
-      // Upload image separately if exists
-      if (formData.image) {
-        try {
-          await complaintService.uploadImage(response.id, formData.image);
-        } catch (uploadError) {
-          console.error("Image upload failed:", uploadError);
-          // We don't fail the whole submission, but alert the user
-          alert("Complaint submitted, but image upload failed. You can try verifying it later in details.");
-        }
-      }
-
       setApiResponse(response);
       setSubmitted(true);
 
-
-      // Optimistically update list
       const newPost = {
         id: response.id || Date.now(),
         submitted_at: new Date().toISOString(),
@@ -140,7 +122,6 @@ export default function Posts() {
       };
       setMyPosts([newPost, ...myPosts]);
 
-      // Reset form
       setFormData({
         original_text: '',
         image: null,
@@ -150,14 +131,13 @@ export default function Posts() {
 
     } catch (error) {
       console.error(error);
-      alert(error.message || 'Failed to submit complaint');
+      setFormError(error.message || 'Failed to submit complaint');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-srec-border bg-gray-50/50 px-4 py-2.5 text-sm text-srec-textPrimary shadow-sm placeholder:text-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/50 transition-all";
-
+  const inputClass = "w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all";
 
   // Success screen
   if (submitted && apiResponse) {
@@ -185,7 +165,7 @@ export default function Posts() {
               </div>
               <div>
                 <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">Category</span>
-                <p className="font-medium text-srec-primary">{apiResponse.category || 'AI Analysis Pending'}</p>
+                <p className="font-medium text-srec-primary">{COMPLAINT_CATEGORIES[apiResponse.category_id] || 'AI Analysis Pending'}</p>
               </div>
               <div>
                 <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">Priority</span>
@@ -196,7 +176,7 @@ export default function Posts() {
               </div>
               <div>
                 <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">Assigned To</span>
-                <p className="font-medium text-gray-900">{apiResponse.assigned_authority || 'Pending'}</p>
+                <p className="font-medium text-gray-900">{apiResponse.assigned_authority_name || 'Pending Assignment'}</p>
               </div>
               {apiResponse.target_department_code && (
                 <div>
@@ -229,7 +209,7 @@ export default function Posts() {
             {apiResponse.llm_failed && (
               <div className="pt-4 border-t border-gray-200 bg-yellow-50 -mx-6 -mb-6 px-6 py-4 rounded-b-xl">
                 <p className="text-xs text-yellow-700">
-                  ⚠️ AI analysis is temporarily unavailable. Your complaint has been submitted and will be manually reviewed.
+                  AI analysis is temporarily unavailable. Your complaint has been submitted and will be manually reviewed.
                 </p>
               </div>
             )}
@@ -268,25 +248,26 @@ export default function Posts() {
     <div className="min-h-screen bg-srec-background">
       <TopNav />
 
-      <div className="max-w-3xl mx-auto p-4 sm:p-6 pb-24 md:pl-24 transition-all duration-300">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Posts</h1>
+      <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight">Posts</h1>
 
-          <div className="flex bg-white rounded-lg shadow-sm border border-srec-border p-1">
+          {/* Pill tab switcher */}
+          <div className="flex bg-gray-100 rounded-full p-1">
             <button
               onClick={() => setActiveTab('create')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'create'
-                ? 'bg-srec-primary text-white shadow-md'
-                : 'text-gray-500 hover:text-gray-900'
+              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'create'
+                ? 'bg-white shadow-sm text-srec-primary font-semibold'
+                : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
               Create
             </button>
             <button
               onClick={() => setActiveTab('mine')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'mine'
-                ? 'bg-srec-primary text-white shadow-md'
-                : 'text-gray-500 hover:text-gray-900'
+              className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'mine'
+                ? 'bg-white shadow-sm text-srec-primary font-semibold'
+                : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
               My Posts
@@ -295,43 +276,47 @@ export default function Posts() {
         </div>
 
         {activeTab === 'create' && (
-          <Card className="p-6 sm:p-8 shadow-sm">
+          <Card className="p-5 sm:p-6 shadow-sm">
             {/* Privacy Reassurance Banner */}
-            <div className="flex items-center gap-3 p-4 mb-6 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 shadow-sm">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shadow-inner text-amber-600">
-                <Lock size={18} />
+            <div className="flex items-center gap-3 p-4 mb-5 rounded-xl bg-amber-50 border border-amber-100">
+              <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                <Lock size={16} />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-amber-800">Anonymous Posting</h4>
-                <p className="text-xs text-amber-700/80 font-medium mt-0.5">
+                <p className="text-xs text-amber-700/80 mt-0.5">
                   Your identity is hidden from other students. Only authorities can see your details.
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {formError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Describe your complaint</label>
                 <textarea
                   name="original_text"
                   value={formData.original_text}
                   onChange={handleChange}
-                  placeholder="Tell us what happened in detail (10-2000 characters)..."
-                  rows={6}
+                  placeholder="Describe your complaint in detail (minimum 10 characters)..."
+                  rows={5}
                   minLength={10}
                   maxLength={2000}
                   className={inputClass}
                   required
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {formData.original_text.length} / 2000 characters
+                <p className="text-xs text-gray-400 mt-1 text-right">
+                  {formData.original_text.length} / 2000
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Complaint Visibility</label>
-                <div className="flex gap-4">
-                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Public' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-500/20' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
+                <div className="flex gap-3">
+                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Public' ? 'border-srec-primary bg-srec-primary/5 text-srec-primary shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
                     <input
                       type="radio"
                       name="visibility"
@@ -340,9 +325,9 @@ export default function Posts() {
                       onChange={handleChange}
                       className="hidden"
                     />
-                    <span className="font-bold">Public</span>
+                    <span className="font-semibold text-sm">Public</span>
                   </label>
-                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Private' ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-sm ring-1 ring-amber-500/20' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
+                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Private' ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
                     <input
                       type="radio"
                       name="visibility"
@@ -351,36 +336,21 @@ export default function Posts() {
                       onChange={handleChange}
                       className="hidden"
                     />
-                    <span className="font-bold">Private</span>
+                    <span className="font-semibold text-sm">Private</span>
                   </label>
                 </div>
-                <p className="text-xs text-gray-500 mt-2 text-center">
-                  {formData.visibility === 'Public'
-                    ? "Visible to all students in the public feed."
-                    : "Visible only to you and the assigned authority."}
-                </p>
               </div>
 
-
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Add a photo (optional)
-                  <span className="text-gray-400 font-normal ml-1">(helps us understand better)</span>
-                </label>
-
                 {!imagePreview ? (
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-colors border-gray-300 bg-gray-50 hover:bg-gray-100">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <Upload className="w-8 h-8 mb-2 text-gray-400" />
-                      <p className="text-xs text-gray-500 font-medium">Click to upload image (max 5MB)</p>
-                      <p className="text-xs text-gray-400 mt-1">JPEG, PNG, GIF, or WebP</p>
-                    </div>
+                  <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <Upload className="w-7 h-7 mb-1.5 text-gray-400" />
+                    <p className="text-xs text-gray-500 font-medium">Click to upload photo (optional, max 5MB)</p>
                     <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
                   </label>
                 ) : (
                   <div className="relative rounded-xl overflow-hidden border border-gray-200">
-                    <img src={imagePreview} alt="Preview" className="w-full h-48 object-cover" />
+                    <img src={imagePreview} alt="Preview" className="w-full h-44 object-cover" />
                     <button
                       type="button"
                       onClick={() => {
@@ -389,49 +359,49 @@ export default function Posts() {
                       }}
                       className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors backdrop-blur-sm"
                     >
-                      <X size={16} />
+                      <X size={15} />
                     </button>
                   </div>
                 )}
               </div>
 
-              <Button
+              <button
                 type="submit"
-                variant="primary"
                 disabled={isSubmitting}
-                className="w-full py-3 mt-4"
+                className="w-full py-3 bg-srec-primary text-white font-semibold rounded-xl hover:bg-srec-primaryHover transition-all duration-200 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Grievance'}
-              </Button>
+              </button>
             </form>
           </Card>
         )}
 
-        {/* --- My Posts --- */}
+        {/* My Posts tab */}
         {activeTab === 'mine' && (
-          <div className="space-y-5">
+          <div className="space-y-3">
             {(!Array.isArray(myPosts) || myPosts.length === 0) ? (
-              <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-50 flex items-center justify-center">
-                  <FileX size={28} className="text-gray-400" />
+              <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-50 flex items-center justify-center">
+                  <Inbox size={26} className="text-gray-400" />
                 </div>
-                <p className="text-gray-600 text-lg font-medium">You haven't raised any issues yet</p>
-                <p className="text-gray-400 text-sm mt-2 max-w-xs mx-auto">
-                  Your submitted issues will appear here so you can track their progress.
+                <p className="text-gray-700 text-base font-semibold">No posts yet</p>
+                <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
+                  Your submitted complaints will appear here
                 </p>
-                <Button variant="ghost" className="mt-4 text-srec-primary font-semibold" onClick={() => setActiveTab('create')}>
-                  Raise your first issue →
-                </Button>
+                <button
+                  className="mt-4 text-sm text-srec-primary font-semibold hover:underline"
+                  onClick={() => setActiveTab('create')}
+                >
+                  Raise your first issue
+                </button>
               </div>
             ) : (
               myPosts.map((post) => (
                 <ComplaintCard
                   key={post.id || post.complaint_id}
                   id={post.id || post.complaint_id}
-                  title={post.title}
-                  desc={post.original_text || post.description}
-                  summary={post.summary || post.llm_analysis?.summary}
-                  category={post.category}
+                  desc={post.rephrased_text || post.original_text}
+                  category={post.category_name || COMPLAINT_CATEGORIES[post.category_id]}
                   has_image={post.has_image}
                   author={post.is_anonymous ? 'Anonymous' : (post.author || post.student_roll_no)}
                   status={post.status}

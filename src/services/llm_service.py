@@ -162,34 +162,43 @@ Complaint:
 
 ROUTING DECISION — follow steps in order, stop at first match:
 
-STEP 1 — Check for ACADEMIC content → "Department":
-Does the complaint mention ANY of: lab, computer lab, classroom, projector, AV system, seminar hall, printer (academic use), software license, IDE software, faculty, professor, HOD, lecture, practicals, curriculum, timetable, project submission, department office, IT equipment in academic building?
-→ YES → Category = "Department"
-CRITICAL: A hostel resident complaining about a lab/projector/printer/seminar hall = "Department", NOT "Men's Hostel" or "Women's Hostel". The student's gender and hostel status are IRRELEVANT for this step.
-
-STEP 2 — Check for MISCONDUCT/VIOLENCE → "Disciplinary Committee":
-Does it mention ANY of: ragging, bullying, physical fight, physical assault, altercation, brawl, violence between students, sexual harassment, threats, stalking, cheating in exam, copying, malpractice, plagiarism, academic dishonesty, impersonation, morphed photos or offensive posts targeting a specific person?
+STEP 1 — Check for STUDENT BEHAVIORAL MISCONDUCT → "Disciplinary Committee":
+Does the complaint describe ANY of:
+• Violence/threats: ragging, bullying, physical fight, assault, brawl, threatening, stalking, harassment, sexual harassment
+• Serious academic dishonesty: cheating in exam, copying, malpractice, plagiarism, impersonation, proxy attendance
+• Classroom/campus disturbance: disturbing class, disrupting lecture, causing nuisance in class, misbehaving in class, shouting in class, making noise in class
+• Unauthorized activities in academic spaces: celebrating in class, birthday party in class, cutting cake in class, eating food in class, playing music in class, watching videos in class
+• General indiscipline: violating college rules, dress code violation, using mobile phone in class without permission, sleeping in class disruptively, disrespecting faculty or staff
 → YES → Category = "Disciplinary Committee"
 
+STEP 2 — Check for ACADEMIC INFRASTRUCTURE issue → "Department":
+Does the complaint mention a problem with EQUIPMENT or FACILITIES in academic areas: lab equipment not working, computer lab issue, projector/AV system fault, seminar hall problem, printer issue (academic use), software license missing, IDE/software not working, classroom infrastructure (broken furniture/AC/fan), faculty/HOD request, curriculum/timetable/project submission, department office service, IT equipment in academic building?
+NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces (not the infrastructure itself), use STEP 1 instead.
+→ YES → Category = "Department"
+CRITICAL: A hostel resident complaining about a lab/projector/seminar hall = "Department", NOT hostel category.
+
 STEP 3 — Check for HOSTEL FACILITY → hostel category:
-Is the issue physically INSIDE a hostel building: hostel rooms, hostel mess food, hostel laundry room, hostel bathrooms, hostel water/electricity supply, hostel maintenance, hostel warden, hostel security, hostel corridor/common room?
-(NOT campus canteen, NOT academic labs, NOT campus library building, NOT campus wifi)
-→ YES → Male student → "Men's Hostel" | Female student → "Women's Hostel"
+Is the issue physically INSIDE a hostel building: hostel rooms, hostel mess food, hostel mess hygiene, hostel laundry room, hostel bathrooms/toilets, hostel water supply, hostel electricity/power outage in hostel block, hostel maintenance (wiring, plumbing inside hostel), hostel warden office, hostel security/gate, hostel corridor/staircase/common room?
+IMPORTANT — these are NOT hostel complaints even if reported by a hosteller:
+• Outdoor trees, campus roads, drainage, campus grounds, open areas
+• Campus canteen (not mess), campus library, campus wifi
+• Academic labs, classrooms, sports grounds, auditorium
+→ YES (strictly inside hostel building/block) → Male student → "Men's Hostel" | Female student → "Women's Hostel"
 
 STEP 4 — Campus-wide facility → "General":
-Issues NOT inside hostel and NOT academic: canteen, library building, campus roads, parking lot, sports courts/grounds, campus wifi, auditorium, drinking water stations.
+All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights.
 
 DEPARTMENT DETECTION (when category = "Department"):
 Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
-- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE department printer") → use that dept code
+- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE printer") → use that dept code
 - Cross-dept OK: ECE student complaining about CSE lab → target_department = "CSE"
 - Default: use student's home department ({department})
 
 PRIORITY:
-- Critical: immediate safety danger or injury risk
+- Critical: immediate safety danger, violence, or injury risk
 - High: many students affected, exam disrupted, key facility completely down
-- Medium: moderate disruption to a subset of students
-- Low: minor inconvenience
+- Medium: moderate disruption to a subset of students or repeated behavioral issue
+- Low: minor inconvenience or first-time minor behavioural issue
 
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
@@ -304,10 +313,10 @@ JSON:"""
 
         # Keyword-based categorization
         category_keywords = {
-            "Hostel": ["hostel", "room", "mess", "warden", "dorm", "bed", "bathroom", "water supply", "electricity", "ac", "fan"],
+            "Hostel": ["hostel", "hostel room", "mess food", "mess hall", "warden", "dorm", "hostel bathroom", "hostel water", "hostel block", "hostel corridor", "hostel gate"],
             "Department": ["lab", "classroom", "department", "academic", "faculty", "professor", "teacher", "lecture", "course", "exam", "lab equipment"],
-            "Disciplinary Committee": ["ragging", "harassment", "bullying", "threat", "abuse", "safety", "assault", "violence", "discrimination"],
-            "General": ["canteen", "library", "playground", "ground", "parking", "transport", "bus", "wifi", "internet", "campus", "infrastructure"]
+            "Disciplinary Committee": ["ragging", "harassment", "bullying", "threat", "abuse", "assault", "violence", "discrimination", "disturbing class", "misbehaving", "indiscipline"],
+            "General": ["canteen", "library", "playground", "ground", "parking", "transport", "bus", "wifi", "internet", "campus", "infrastructure", "tree", "road", "drainage", "streetlight", "gate"]
         }
 
         # Count keyword matches for each category

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, EliteButton } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
-import studentService from '../../../services/student.service';
+import authorityService from '../../../services/authority.service';
 import AuthoritySidebar from '../components/AuthoritySidebar';
 import AuthorityHeader from '../components/AuthorityHeader';
 import { Bell, Check, Trash2, AlertCircle, MessageSquare, CheckCircle } from 'lucide-react';
@@ -24,7 +24,7 @@ export default function AuthorityNotifications() {
             setLoading(true);
             const currentSkip = reset ? 0 : skip;
             // Using studentService as it's likely used for generic notifications or shared endpoints
-            const data = await studentService.getNotifications({
+            const data = await authorityService.getNotifications({
                 skip: currentSkip,
                 limit: LIMIT,
                 unread_only: unreadOnly
@@ -53,7 +53,7 @@ export default function AuthorityNotifications() {
 
     const handleMarkRead = async (id) => {
         try {
-            await studentService.markNotificationRead(id);
+            await authorityService.markNotificationRead(id);
             setNotifications(prev => prev.map(n =>
                 n.id === id ? { ...n, is_read: true } : n
             ));
@@ -64,7 +64,7 @@ export default function AuthorityNotifications() {
 
     const handleDelete = async (id) => {
         try {
-            await studentService.deleteNotification(id);
+            await authorityService.deleteNotification(id);
             setNotifications(prev => prev.filter(n => n.id !== id));
         } catch (error) {
             console.error("Failed to delete", error);
@@ -73,7 +73,7 @@ export default function AuthorityNotifications() {
 
     const handleMarkAllRead = async () => {
         try {
-            await studentService.markAllNotificationsRead();
+            await authorityService.markAllNotificationsRead();
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
         } catch (error) {
             console.error("Failed to mark all read", error);

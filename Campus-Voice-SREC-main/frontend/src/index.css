@@ -7,6 +7,10 @@
   color-scheme: light;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 html,
 body,
 #root {
@@ -17,6 +21,12 @@ body,
 body {
   font-family: 'Inter', sans-serif;
 }
+
+/* Thin scrollbar for webkit browsers */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
 /* Success Animation Styles */
 @keyframes drawCircle {
@@ -72,3 +82,10 @@ body {
 body {
   background-color: #F8FAF8;
 }
+
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn { animation: pageFadeIn 0.2s ease-out forwards; }

@@ -126,9 +126,9 @@ class ComplaintStatus(str, Enum):
 
 
 VALID_STATUS_TRANSITIONS: Dict[str, List[str]] = {
-    "Raised": ["In Progress", "Spam", "Closed"],
-    "In Progress": ["Resolved", "Raised", "Closed"],
-    "Resolved": ["Closed", "Raised"],
+    "Raised": ["In Progress", "Resolved", "Spam"],
+    "In Progress": ["Resolved", "Spam"],
+    "Resolved": ["Closed"],
     "Closed": [],
     "Spam": ["Closed"],
 }
@@ -379,8 +379,8 @@ MIN_PAGE_SIZE: int = 1
 # ==================== TIME CONSTANTS ====================
 
 # ✅ FIX: Add the missing constant
-ESCALATION_THRESHOLD_DAYS: int = 2  # Auto-escalate after 2 days
-AUTO_ESCALATE_HOURS: int = 48  # Same as 2 days in hours
+ESCALATION_THRESHOLD_DAYS: int = 7  # Auto-escalate after 1 week
+AUTO_ESCALATE_HOURS: int = 168  # Same as 7 days in hours
 
 SLA_HOURS: Dict[str, int] = {
     "Low": 168,      # 7 days
@@ -397,7 +397,7 @@ TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
 
 # Email must end with @srec.ac.in for SREC college
 EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@srec\.ac\.in$')
-ROLL_NO_PATTERN = re.compile(r'^[0-9]{2}[A-Z_]{2,10}[0-9]{3,4}$')  # Fixed: Allow up to 10 chars for dept codes like CIVIL, MTECH_CSE
+ROLL_NO_PATTERN = re.compile(r'^[a-zA-Z0-9_]{5,20}$')  # Accepts purely numeric (e.g. 2201231) and alpha formats
 PHONE_PATTERN = re.compile(r'^[6-9]\d{9}$')
 PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
 

@@ -227,6 +227,7 @@ export default function AdminAuthorities() {
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false);
     const [feedback, setFeedback] = useState({ type: '', message: '' });
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         loadAuthorities();
@@ -269,20 +270,43 @@ export default function AdminAuthorities() {
         );
     }
 
+    // Filter authorities in-memory by name/role/department
+    const filteredAuthorities = authorities.filter((auth) => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            auth.name?.toLowerCase().includes(q) ||
+            auth.authority_type?.toLowerCase().includes(q) ||
+            auth.department_name?.toLowerCase().includes(q) ||
+            auth.email?.toLowerCase().includes(q)
+        );
+    });
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {/* Header */}
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-center gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Authority Management</h1>
-                    <p className="text-gray-500 text-sm mt-1">
-                        Manage access and roles for all system authorities ({authorities.length} total)
+                    <h1 className="text-xl font-bold text-gray-900">Authority Management</h1>
+                    <p className="text-gray-400 text-sm mt-0.5">
+                        {authorities.length} authorities total
                     </p>
                 </div>
                 <EliteButton variant="primary" onClick={() => setShowCreate(true)}>
                     <Plus size={16} className="mr-2" />
                     Add Authority
                 </EliteButton>
+            </div>
+
+            {/* Search/Filter input */}
+            <div>
+                <input
+                    type="text"
+                    placeholder="Search authorities by name, role, or department..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all bg-white"
+                />
             </div>
 
             {/* Feedback banner */}
@@ -315,63 +339,64 @@ export default function AdminAuthorities() {
                     </EliteButton>
                 </Card>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {authorities.map((auth) => (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredAuthorities.map((auth) => (
                         <div
                             key={auth.id}
-                            className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md transition-all"
+                            className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg transition-all duration-200 overflow-hidden group"
                         >
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="w-12 h-12 rounded-full bg-srec-primary/10 flex items-center justify-center text-srec-primary font-bold text-lg flex-shrink-0">
-                                    {auth.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="font-bold text-gray-900 truncate">{auth.name}</h3>
-                                    <p className="text-xs text-gray-500 truncate">{auth.email}</p>
-                                </div>
-                            </div>
+                            {/* Card top accent */}
+                            <div className={`h-1 w-full ${auth.is_active ? 'bg-gradient-to-r from-srec-primary to-srec-primaryHover' : 'bg-gray-200'}`} />
 
-                            <div className="space-y-2 mb-5">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Role</span>
-                                    <span className="font-medium text-gray-900 text-right text-xs leading-tight max-w-[60%]">
+                            <div className="p-5">
+                                {/* Header: Avatar + name + status badge */}
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-11 h-11 rounded-xl bg-srec-primary/10 flex items-center justify-center text-srec-primary font-bold text-base flex-shrink-0 group-hover:bg-srec-primary group-hover:text-white transition-colors duration-200">
+                                            {auth.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h3 className="font-bold text-gray-900 truncate text-sm">{auth.name}</h3>
+                                            <p className="text-xs text-gray-400 truncate">{auth.email}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                        auth.is_active
+                                            ? 'bg-green-50 text-green-700 border border-green-100'
+                                            : 'bg-red-50 text-red-600 border border-red-100'
+                                    }`}>
+                                        {auth.is_active
+                                            ? <><CheckCircle size={9} /> Active</>
+                                            : <><XCircle size={9} /> Disabled</>}
+                                    </span>
+                                </div>
+
+                                {/* Role badge */}
+                                <div className="mb-3">
+                                    <span className="inline-block bg-srec-primary/8 text-srec-primary text-xs font-semibold px-2.5 py-1 rounded-lg">
                                         {auth.authority_type}
                                     </span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Level</span>
-                                    <span className="font-medium text-gray-900">{auth.authority_level}</span>
-                                </div>
-                                {auth.department_name && (
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">Dept.</span>
-                                        <span className="font-medium text-gray-900">{auth.department_name}</span>
-                                    </div>
-                                )}
-                                <div className="flex justify-between text-sm items-center">
-                                    <span className="text-gray-500">Status</span>
-                                    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                                        auth.is_active
-                                            ? 'bg-green-50 text-green-700'
-                                            : 'bg-red-50 text-red-600'
-                                    }`}>
-                                        {auth.is_active
-                                            ? <><CheckCircle size={10} /> Active</>
-                                            : <><XCircle size={10} /> Disabled</>}
-                                    </span>
-                                </div>
-                            </div>
 
-                            <button
-                                className={`w-full py-2 rounded-xl text-sm font-semibold transition-all ${
-                                    auth.is_active
-                                        ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
-                                        : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-100'
-                                }`}
-                                onClick={() => toggleStatus(auth.id, auth.is_active)}
-                            >
-                                {auth.is_active ? 'Disable Account' : 'Enable Account'}
-                            </button>
+                                {/* Department (if any) */}
+                                {auth.department_name && (
+                                    <p className="text-xs text-gray-500 mb-3">
+                                        <span className="text-gray-400">Dept: </span>{auth.department_name}
+                                    </p>
+                                )}
+
+                                {/* Toggle button */}
+                                <button
+                                    className={`w-full py-2 rounded-xl text-xs font-bold transition-all mt-2 border ${
+                                        auth.is_active
+                                            ? 'bg-red-50 text-red-600 hover:bg-red-100 border-red-100'
+                                            : 'bg-green-50 text-green-700 hover:bg-green-100 border-green-100'
+                                    }`}
+                                    onClick={() => toggleStatus(auth.id, auth.is_active)}
+                                >
+                                    {auth.is_active ? 'Disable Account' : 'Enable Account'}
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>

@@ -136,7 +136,11 @@ class ComplaintService:
             spam_check = await llm_service.detect_spam(original_text)
 
             # ✅ NEW: REJECT spam complaints outright (don't create)
-            if spam_check.get("is_spam"):
+            # Only reject if confidence is high enough (>= 0.85) to avoid blocking
+            # legitimate complaints with casual/misspelled language
+            SPAM_CONFIDENCE_THRESHOLD = 0.85
+            spam_confident = spam_check.get("confidence", 1.0) >= SPAM_CONFIDENCE_THRESHOLD
+            if spam_check.get("is_spam") and spam_confident:
                 spam_reason = spam_check.get("reason", "Content flagged as spam or abusive")
                 logger.warning(
                     f"Spam complaint rejected for {student_roll_no}: {spam_reason}"
@@ -623,14 +627,15 @@ class ComplaintService:
         self.db.add(status_update)
         await self.db.commit()
         
-        # Notify student
+        # Notify student (str() prevents enum repr like ComplaintStatus.CLOSED)
+        _status_str = str(new_status).split(".")[-1] if "." in str(new_status) else str(new_status)
         await notification_service.create_notification(
             self.db,
             recipient_type="Student",
             recipient_id=complaint.student_roll_no,
             complaint_id=complaint_id,
             notification_type="status_update",
-            message=f"Your complaint status changed to '{new_status}'" + 
+            message=f"Your complaint status changed to '{_status_str}'" +
                     (f": {reason}" if reason else "")
         )
         

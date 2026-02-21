@@ -1,18 +1,15 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { Card, EliteButton } from '../../../components/UI';
 import AuthoritySidebar from '../components/AuthoritySidebar';
 import AuthorityHeader from '../components/AuthorityHeader';
-import { User, Mail, Shield, LogOut } from 'lucide-react';
+import { LogOut, Mail, Building, Shield } from 'lucide-react';
 
 export default function AuthorityProfile() {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
 
-    const handleLogout = () => {
-        if (window.confirm('Are you sure you want to logout?')) {
-            logout();
-        }
-    };
+    const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'AU';
 
     return (
         <div className="flex min-h-screen bg-srec-background">
@@ -21,55 +18,40 @@ export default function AuthorityProfile() {
             <div className="flex-1 md:ml-64 flex flex-col min-w-0 transition-all duration-300">
                 <AuthorityHeader />
 
-                <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
-                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight mb-8">My Profile</h1>
-
-                    <div className="max-w-2xl mx-auto">
-                        <Card className="p-8 border-gray-100 shadow-sm relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-srec-primary to-srec-primaryHover opacity-10"></div>
-
-                            <div className="relative flex flex-col items-center text-center -mt-4 mb-8">
-                                <div className="w-24 h-24 bg-white rounded-full p-2 shadow-md mb-4 border border-gray-100">
-                                    <div className="w-full h-full bg-srec-primary/10 rounded-full flex items-center justify-center text-srec-primary">
-                                        <User size={40} />
-                                    </div>
-                                </div>
-                                <h2 className="text-xl font-bold text-gray-900">{user?.name || 'Authority User'}</h2>
-                                <p className="text-sm text-gray-500 font-medium">{user?.designation || 'Authority'}</p>
-                                <div className="mt-3">
-                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
-                                        <Shield size={12} className="mr-1" />
-                                        {user?.role}
-                                    </span>
-                                </div>
+                <main className="flex-1 p-6 sm:p-8 overflow-y-auto animate-fadeIn">
+                    <div className="p-6 max-w-lg mx-auto">
+                        {/* Avatar */}
+                        <div className="flex flex-col items-center mb-8">
+                            <div className="w-20 h-20 rounded-full bg-srec-primary/10 text-srec-primary flex items-center justify-center text-2xl font-bold mb-3">
+                                {initials}
                             </div>
+                            <h1 className="text-xl font-semibold text-gray-900">{user?.name || 'Authority User'}</h1>
+                            <p className="text-sm text-gray-400">{user?.authority_type || user?.designation || user?.role || 'Authority'}</p>
+                        </div>
 
-                            <div className="space-y-6">
-                                <div className="flex items-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-gray-400 border border-gray-100 shadow-sm mr-4">
-                                        <Mail size={20} />
-                                    </div>
+                        {/* Info rows */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+                            {[
+                                { icon: Shield, label: 'Role', value: user?.authority_type || user?.role },
+                                { icon: Building, label: 'Department', value: user?.department || 'All Departments' },
+                                { icon: Mail, label: 'Email', value: user?.email },
+                            ].map(({ icon: Icon, label, value }) => (
+                                <div key={label} className="flex items-center gap-4 px-5 py-4">
+                                    <Icon size={18} className="text-gray-400 flex-shrink-0" />
                                     <div>
-                                        <p className="text-xs text-uppercase tracking-wider text-gray-400 font-semibold">EMAIL ADDRESS</p>
-                                        <p className="text-gray-900 font-medium">{user?.email}</p>
+                                        <p className="text-xs text-gray-400">{label}</p>
+                                        <p className="text-sm font-medium text-gray-900">{value || '—'}</p>
                                     </div>
                                 </div>
+                            ))}
+                        </div>
 
-                                <div className="pt-6 border-t border-gray-100">
-                                    <EliteButton
-                                        variant="danger"
-                                        className="w-full justify-center py-3 text-base shadow-lg shadow-red-100 hover:shadow-red-200"
-                                        onClick={handleLogout}
-                                    >
-                                        <LogOut size={18} className="mr-2" />
-                                        Logout
-                                    </EliteButton>
-                                    <p className="text-xs text-center text-gray-400 mt-4">
-                                        You will be redirected to the login page.
-                                    </p>
-                                </div>
-                            </div>
-                        </Card>
+                        {/* Sign Out */}
+                        <button
+                            onClick={() => { logout(); navigate('/login'); }}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-6">
+                            <LogOut size={18} /> Sign Out
+                        </button>
                     </div>
                 </main>
             </div>

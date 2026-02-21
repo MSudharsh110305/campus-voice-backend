@@ -59,3 +59,8 @@ TEST_SUMMARY.md
 
 # Documentation (keep only API_REFERENCE.txt)
 BACKEND_OVERVIEW.txt
+
+# Project meta & AI tooling
+CLAUDE.md
+MANUAL_TESTING_GUIDE.txt
+credentials.txt

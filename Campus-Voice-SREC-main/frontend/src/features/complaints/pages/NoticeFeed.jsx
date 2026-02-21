@@ -3,6 +3,7 @@ import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { Card, Badge, EliteButton, Skeleton } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import studentService from '../../../services/student.service';
 import { Megaphone, Calendar, AlertTriangle, Info } from 'lucide-react';
 
@@ -22,6 +23,7 @@ const CATEGORY_ICONS = {
 
 export default function NoticeFeed() {
     const { user } = useAuth();
+    const { markNoticesSeen } = useNotifications();
     const [notices, setNotices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [skip, setSkip] = useState(0);
@@ -31,6 +33,7 @@ export default function NoticeFeed() {
 
     useEffect(() => {
         fetchNotices(true);
+        markNoticesSeen(); // Clear the notice badge when this page is opened
     }, []);
 
     const fetchNotices = async (reset = false) => {

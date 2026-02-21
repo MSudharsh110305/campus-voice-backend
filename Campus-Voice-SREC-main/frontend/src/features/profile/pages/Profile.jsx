@@ -3,12 +3,14 @@ import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { Card, Button } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import studentService from '../../../services/student.service';
 import { LogOut, User, Mail, Hash, Building, BookOpen, Edit2, Lock, X, CheckCircle } from 'lucide-react';
 import { DEPARTMENT_BY_ID } from '../../../utils/constants';
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -172,18 +174,22 @@ export default function Profile() {
 
             {/* Stats Row */}
             {stats && (
-              <div className="grid grid-cols-3 gap-3 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-4 gap-2 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
                 <div className="text-center">
                   <div className="text-xl font-bold text-gray-900">{stats.total_complaints || 0}</div>
                   <div className="text-xs text-gray-500">Total</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-amber-600">{stats.in_progress || 0}</div>
+                  <div className="text-xs text-gray-500">In Progress</div>
                 </div>
                 <div className="text-center">
                   <div className="text-xl font-bold text-green-600">{stats.resolved || 0}</div>
                   <div className="text-xs text-gray-500">Resolved</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xl font-bold text-amber-600">{stats.in_progress || 0}</div>
-                  <div className="text-xs text-gray-500">In Progress</div>
+                  <div className="text-xl font-bold text-gray-500">{stats.closed || 0}</div>
+                  <div className="text-xs text-gray-500">Closed</div>
                 </div>
               </div>
             )}
@@ -252,14 +258,12 @@ export default function Profile() {
                   <Lock size={18} />
                   Change Password
                 </Button>
-                <Button
-                  onClick={logout}
-                  variant="danger"
-                  className="w-full flex items-center justify-center gap-2 py-3"
+                <button
+                  onClick={() => { logout(); navigate('/login'); }}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-6"
                 >
-                  <LogOut size={18} />
-                  Sign Out
-                </Button>
+                  <LogOut size={18} /> Sign Out
+                </button>
               </div>
             </div>
           </div>

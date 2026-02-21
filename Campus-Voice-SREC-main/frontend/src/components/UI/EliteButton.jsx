@@ -26,7 +26,7 @@ const EliteButton = ({
 }) => {
 
     // Base styles
-    const baseStyles = "rounded-xl font-medium transition-all duration-200 shadow-[4px_4px_12px_rgba(0,0,0,0.08),-4px_-4px_12px_rgba(255,255,255,0.9)] hover:shadow-[inset_2px_2px_6px_rgba(0,0,0,0.08),inset_-2px_-2px_6px_rgba(255,255,255,0.9)] active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2";
+    const baseStyles = "rounded-xl font-medium transition-all duration-200 shadow-[4px_4px_12px_rgba(0,0,0,0.08),-4px_-4px_12px_rgba(255,255,255,0.9)] hover:shadow-[inset_2px_2px_6px_rgba(0,0,0,0.08),inset_-2px_-2px_6px_rgba(255,255,255,0.9)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-srec-primary focus:ring-offset-2";
 
     // Size variations
     const sizes = {

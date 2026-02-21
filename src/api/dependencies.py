@@ -734,6 +734,28 @@ async def validate_complaint_ownership(
         )
 
 
+# ==================== IMAGE ACCESS (any authenticated user) ====================
+
+async def get_complaint_for_image(
+    complaint_id: UUID,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Allow any authenticated user (student, authority, admin) to fetch a complaint image.
+    No visibility check — image is accessible to anyone who knows the complaint ID and is logged in.
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    return complaint
+
+
 # ==================== REPOSITORY DEPENDENCIES ====================
 
 async def get_student_repo(db: AsyncSession = Depends(get_db)) -> StudentRepository:

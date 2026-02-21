@@ -28,10 +28,27 @@ const emptyForm = {
 
 export default function AuthorityNotices() {
     const { user } = useAuth();
+
+    // Determine gender/stay-type constraints based on authority type
+    const isMensWarden   = user?.authority_type?.toLowerCase().includes("men's hostel");
+    const isWomensWarden = user?.authority_type?.toLowerCase().includes("women's hostel");
+    const isHostelWarden = isMensWarden || isWomensWarden;
+
+    // For hostel wardens: pre-lock gender and stay_type
+    const lockedGender    = isMensWarden ? ['Male'] : isWomensWarden ? ['Female'] : null;
+    const lockedStayTypes = isHostelWarden ? ['Hostel'] : null;
+
+    // Build the initial form with locks applied
+    const buildEmptyForm = () => ({
+        ...emptyForm,
+        target_gender:     lockedGender    ? [...lockedGender]    : [],
+        target_stay_types: lockedStayTypes ? [...lockedStayTypes] : [],
+    });
+
     const [notices, setNotices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState(emptyForm);
+    const [form, setForm] = useState(buildEmptyForm);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -85,7 +102,7 @@ export default function AuthorityNotices() {
         try {
             await authorityService.createNotice(payload);
             setSuccess('Notice sent successfully!');
-            setForm(emptyForm);
+            setForm(buildEmptyForm());
             setShowForm(false);
             await loadNotices();
         } catch (err) {
@@ -117,7 +134,7 @@ export default function AuthorityNotices() {
             <div className="flex-1 md:ml-64 flex flex-col min-w-0 transition-all duration-300">
                 <AuthorityHeader />
 
-                <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
+                <main className="flex-1 p-6 sm:p-8 overflow-y-auto animate-fadeIn">
                     <div className="max-w-4xl mx-auto space-y-6">
                         {/* Header */}
                         <div className="flex items-center justify-between">
@@ -205,43 +222,59 @@ export default function AuthorityNotices() {
 
                                         {/* Gender */}
                                         <div>
-                                            <label className="text-xs font-semibold text-gray-600 mb-2 block">Gender</label>
+                                            <label className="text-xs font-semibold text-gray-600 mb-2 block">
+                                                Gender
+                                                {lockedGender && <span className="ml-2 text-[10px] text-srec-primary font-normal">(auto-set for your hostel)</span>}
+                                            </label>
                                             <div className="flex gap-2 flex-wrap">
-                                                {GENDER.map(g => (
-                                                    <button
-                                                        key={g}
-                                                        type="button"
-                                                        onClick={() => setForm(f => ({ ...f, target_gender: toggleArrayItem(f.target_gender, g) }))}
-                                                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                                                            form.target_gender.includes(g)
-                                                                ? 'bg-srec-primary text-white shadow-sm'
-                                                                : 'bg-white text-gray-600 border border-gray-200 hover:border-srec-primary/50'
-                                                        }`}
-                                                    >
-                                                        {g}
-                                                    </button>
-                                                ))}
+                                                {GENDER.map(g => {
+                                                    const isLocked = lockedGender !== null;
+                                                    const isSelected = form.target_gender.includes(g);
+                                                    return (
+                                                        <button
+                                                            key={g}
+                                                            type="button"
+                                                            disabled={isLocked}
+                                                            onClick={() => !isLocked && setForm(f => ({ ...f, target_gender: toggleArrayItem(f.target_gender, g) }))}
+                                                            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                                                isSelected
+                                                                    ? 'bg-srec-primary text-white shadow-sm'
+                                                                    : 'bg-white text-gray-600 border border-gray-200'
+                                                            } ${isLocked ? 'opacity-60 cursor-not-allowed' : 'hover:border-srec-primary/50'}`}
+                                                        >
+                                                            {g}
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 
                                         {/* Stay Type */}
                                         <div>
-                                            <label className="text-xs font-semibold text-gray-600 mb-2 block">Stay Type</label>
+                                            <label className="text-xs font-semibold text-gray-600 mb-2 block">
+                                                Stay Type
+                                                {lockedStayTypes && <span className="ml-2 text-[10px] text-srec-primary font-normal">(auto-set for hostel wardens)</span>}
+                                            </label>
                                             <div className="flex gap-2 flex-wrap">
-                                                {STAY_TYPE.map(s => (
-                                                    <button
-                                                        key={s}
-                                                        type="button"
-                                                        onClick={() => setForm(f => ({ ...f, target_stay_types: toggleArrayItem(f.target_stay_types, s) }))}
-                                                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                                                            form.target_stay_types.includes(s)
-                                                                ? 'bg-srec-primary text-white shadow-sm'
-                                                                : 'bg-white text-gray-600 border border-gray-200 hover:border-srec-primary/50'
-                                                        }`}
-                                                    >
-                                                        {s}
-                                                    </button>
-                                                ))}
+                                                {STAY_TYPE.map(s => {
+                                                    const isLocked = lockedStayTypes !== null;
+                                                    const isSelected = form.target_stay_types.includes(s);
+                                                    return (
+                                                        <button
+                                                            key={s}
+                                                            type="button"
+                                                            disabled={isLocked}
+                                                            onClick={() => !isLocked && setForm(f => ({ ...f, target_stay_types: toggleArrayItem(f.target_stay_types, s) }))}
+                                                            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                                                isSelected
+                                                                    ? 'bg-srec-primary text-white shadow-sm'
+                                                                    : 'bg-white text-gray-600 border border-gray-200'
+                                                            } ${isLocked ? 'opacity-60 cursor-not-allowed' : 'hover:border-srec-primary/50'}`}
+                                                        >
+                                                            {s}
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 
@@ -249,7 +282,7 @@ export default function AuthorityNotices() {
                                         <div>
                                             <label className="text-xs font-semibold text-gray-600 mb-2 block">Year(s)</label>
                                             <div className="flex gap-2 flex-wrap">
-                                                {['1','2','3','4','5','6'].map(y => (
+                                                {['1','2','3','4','5'].map(y => (
                                                     <button
                                                         key={y}
                                                         type="button"
@@ -305,7 +338,7 @@ export default function AuthorityNotices() {
                                 </Card>
                             ) : (
                                 notices.map(notice => (
-                                    <div key={notice.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+                                    <div key={notice.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 transition-all duration-200 hover:shadow-md">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -313,22 +346,24 @@ export default function AuthorityNotices() {
                                                         {notice.priority}
                                                     </span>
                                                     <span className="text-xs text-gray-400">{notice.category}</span>
+                                                    <span className="text-xs text-gray-300 ml-auto">
+                                                        {new Date(notice.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                    </span>
                                                 </div>
-                                                <h3 className="font-bold text-gray-900 mb-1">{notice.title}</h3>
-                                                <p className="text-sm text-gray-600 line-clamp-2">{notice.content}</p>
-                                                <div className="mt-3 text-xs text-gray-400">
-                                                    Sent: {new Date(notice.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                    {notice.expires_at && (
-                                                        <span className="ml-3">Expires: {new Date(notice.expires_at).toLocaleDateString()}</span>
-                                                    )}
-                                                </div>
+                                                <h3 className="font-semibold text-gray-900 mb-1.5 text-sm">{notice.title}</h3>
+                                                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">{notice.content}</p>
+                                                {notice.expires_at && (
+                                                    <p className="mt-2 text-xs text-amber-600">
+                                                        Expires: {new Date(notice.expires_at).toLocaleDateString()}
+                                                    </p>
+                                                )}
                                             </div>
                                             <button
                                                 onClick={() => handleDeactivate(notice.id)}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 flex-shrink-0"
                                                 title="Deactivate notice"
                                             >
-                                                <Trash2 size={16} />
+                                                <Trash2 size={15} />
                                             </button>
                                         </div>
                                     </div>

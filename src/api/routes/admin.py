@@ -26,6 +26,7 @@ from src.schemas.authority import (
     AuthorityListResponse,
 )
 from src.schemas.student import StudentProfile, StudentListResponse
+from src.schemas.complaint import ComplaintListResponse, ComplaintResponse
 from src.schemas.common import SuccessResponse
 from src.repositories.authority_repo import AuthorityRepository
 from src.repositories.student_repo import StudentRepository
@@ -341,6 +342,118 @@ async def toggle_student_status(
     return SuccessResponse(
         success=True,
         message=f"Student account {action}"
+    )
+
+
+# ==================== COMPLAINT MANAGEMENT ====================
+
+@router.get(
+    "/complaints",
+    response_model=ComplaintListResponse,
+    summary="Admin: list all complaints",
+    description="List all complaints system-wide with optional filters (admin only)"
+)
+async def admin_list_complaints(
+    status_filter: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    category_id: Optional[int] = Query(None),
+    category_name: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all complaints with optional status, priority, category, date range, and search filters."""
+    from sqlalchemy import select, func, and_, or_
+    from sqlalchemy.orm import selectinload
+    from src.database.models import Complaint, ComplaintCategory
+
+    conditions = []
+    if status_filter:
+        conditions.append(Complaint.status == status_filter)
+    if priority:
+        conditions.append(Complaint.priority == priority)
+    if category_id:
+        conditions.append(Complaint.category_id == category_id)
+    if category_name:
+        cat_subq = select(ComplaintCategory.id).where(
+            ComplaintCategory.name.ilike(f"%{category_name}%")
+        ).scalar_subquery()
+        conditions.append(Complaint.category_id.in_(cat_subq))
+    if search:
+        conditions.append(or_(
+            Complaint.rephrased_text.ilike(f"%{search}%"),
+            Complaint.original_text.ilike(f"%{search}%"),
+        ))
+    if date_from:
+        try:
+            df = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            conditions.append(Complaint.submitted_at >= df)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+            conditions.append(Complaint.submitted_at < dt)
+        except ValueError:
+            pass
+
+    where_clause = and_(*conditions) if conditions else True
+
+    query = (
+        select(Complaint)
+        .options(
+            selectinload(Complaint.category),
+            selectinload(Complaint.student),
+            selectinload(Complaint.assigned_authority),
+        )
+        .where(where_clause)
+        .order_by(Complaint.submitted_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    complaints = result.scalars().all()
+
+    count_result = await db.execute(select(func.count()).select_from(Complaint).where(where_clause))
+    total = count_result.scalar() or 0
+
+    complaint_responses = []
+    for c in complaints:
+        data = {
+            "id": c.id,
+            "category_id": c.category_id,
+            "category_name": c.category.name if c.category else None,
+            "original_text": c.original_text,
+            "rephrased_text": c.rephrased_text,
+            "visibility": c.visibility,
+            "upvotes": c.upvotes,
+            "downvotes": c.downvotes,
+            "priority": c.priority,
+            "priority_score": c.priority_score,
+            "status": c.status,
+            "assigned_authority_name": c.assigned_authority.name if c.assigned_authority else None,
+            "is_marked_as_spam": c.is_marked_as_spam,
+            "has_image": c.has_image,
+            "image_verified": c.image_verified,
+            "image_verification_status": c.image_verification_status,
+            "submitted_at": c.submitted_at,
+            "updated_at": c.updated_at,
+            "resolved_at": c.resolved_at,
+            "student_roll_no": c.student_roll_no,
+            "student_name": c.student.name if c.student else None,
+        }
+        complaint_responses.append(ComplaintResponse.model_validate(data))
+
+    return ComplaintListResponse(
+        complaints=complaint_responses,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit
     )
 
 
@@ -679,6 +792,112 @@ async def moderate_image(
         success=True,
         message=message
     )
+
+
+# ==================== ESCALATIONS ====================
+
+@router.get(
+    "/escalations",
+    summary="Admin: get escalation overview",
+    description="Returns escalated complaints, critical unescalated issues, and overdue complaints"
+)
+async def admin_get_escalations(
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import select, func, and_, or_
+    from sqlalchemy.orm import selectinload
+    from src.database.models import Complaint
+    from src.config.constants import ESCALATION_THRESHOLD_DAYS
+
+    threshold_dt = datetime.now(timezone.utc) - timedelta(days=ESCALATION_THRESHOLD_DAYS)
+
+    def _complaint_dict(c):
+        return {
+            "id": str(c.id),
+            "category_name": c.category.name if c.category else None,
+            "rephrased_text": c.rephrased_text,
+            "original_text": c.original_text,
+            "status": c.status,
+            "priority": c.priority,
+            "student_roll_no": c.student_roll_no,
+            "student_name": c.student.name if c.student else None,
+            "assigned_authority_name": c.assigned_authority.name if c.assigned_authority else None,
+            "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            "has_image": c.has_image,
+            "is_marked_as_spam": c.is_marked_as_spam,
+            "was_escalated": c.original_assigned_authority_id is not None,
+        }
+
+    load_opts = [
+        selectinload(Complaint.category),
+        selectinload(Complaint.student),
+        selectinload(Complaint.assigned_authority),
+    ]
+
+    # 1. Escalated complaints (manually or auto escalated)
+    escalated_q = (
+        select(Complaint)
+        .options(*load_opts)
+        .where(
+            and_(
+                Complaint.original_assigned_authority_id.isnot(None),
+                Complaint.status.notin_(["Resolved", "Closed", "Spam"]),
+            )
+        )
+        .order_by(Complaint.submitted_at.asc())
+        .limit(50)
+    )
+    escalated_res = await db.execute(escalated_q)
+    escalated = escalated_res.scalars().all()
+
+    # 2. Critical complaints that have NOT been escalated yet
+    critical_q = (
+        select(Complaint)
+        .options(*load_opts)
+        .where(
+            and_(
+                Complaint.priority == "Critical",
+                Complaint.original_assigned_authority_id.is_(None),
+                Complaint.status.notin_(["Resolved", "Closed", "Spam"]),
+            )
+        )
+        .order_by(Complaint.submitted_at.asc())
+        .limit(50)
+    )
+    critical_res = await db.execute(critical_q)
+    critical = critical_res.scalars().all()
+
+    # 3. Overdue complaints (older than threshold, still open, not yet escalated)
+    overdue_q = (
+        select(Complaint)
+        .options(*load_opts)
+        .where(
+            and_(
+                Complaint.status.in_(["Raised", "In Progress"]),
+                Complaint.submitted_at < threshold_dt,
+                Complaint.original_assigned_authority_id.is_(None),
+                Complaint.priority != "Critical",  # critical already in section 2
+            )
+        )
+        .order_by(Complaint.submitted_at.asc())
+        .limit(50)
+    )
+    overdue_res = await db.execute(overdue_q)
+    overdue = overdue_res.scalars().all()
+
+    return {
+        "summary": {
+            "escalated_count": len(escalated),
+            "critical_count": len(critical),
+            "overdue_count": len(overdue),
+            "escalation_threshold_days": ESCALATION_THRESHOLD_DAYS,
+        },
+        "escalated": [_complaint_dict(c) for c in escalated],
+        "critical": [_complaint_dict(c) for c in critical],
+        "overdue": [_complaint_dict(c) for c in overdue],
+    }
 
 
 # ==================== SYSTEM HEALTH ====================

@@ -1,41 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, User, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import studentService from '../services/student.service';
+import { useNotifications } from '../context/NotificationContext';
 
 export function TopNav() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'Admin';
   const isStudent = user?.role === 'Student';
-  const [unreadCount, setUnreadCount] = useState(0);
 
-  // Student pages that should show notification bell
-  const studentPages = ['/home', '/posts', '/profile', '/notifications'];
-  const showNotificationBell = isStudent && studentPages.includes(location.pathname);
-
-  useEffect(() => {
-    if (isStudent) {
-      fetchUnreadCount();
-      // Optional: Poll every minute or listen to socket
-      const interval = setInterval(fetchUnreadCount, 60000);
-      return () => clearInterval(interval);
-    }
-  }, [isStudent, location.pathname]); // Refresh on navigation to keep current
-
-  const fetchUnreadCount = async () => {
-    try {
-      const data = await studentService.getUnreadCount();
-      setUnreadCount(data.unread_count || 0);
-    } catch (error) {
-      console.error("Failed to fetch notification count", error);
-    }
-  };
+  const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
   return (
-    <div className="sticky top-0 z-30 bg-srec-card shadow-sm border-b border-srec-border">
+    <div className="sticky top-0 z-30 shadow-sm border-b border-gray-100 backdrop-blur-sm bg-white/95">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2 group">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-srec-primaryLight to-srec-primary flex items-center justify-center text-white font-bold shadow-md shadow-srec-primary/20 group-hover:scale-105 transition-transform">
@@ -43,25 +23,55 @@ export function TopNav() {
           </div>
           <span className="font-bold text-gray-900 tracking-tight text-lg group-hover:text-srec-primary transition-colors">CampusVoice</span>
         </Link>
-        <nav className="flex items-center gap-4 text-sm font-medium">
+        <nav className="flex items-center gap-2 text-sm font-medium">
           {isAdmin ? (
-            <Link to="/admin" className={location.pathname === '/admin' ? 'text-srec-primary' : 'text-gray-500 hover:text-gray-900'}>Dashboard</Link>
-          ) : (
+            <Link to="/admin" className={`text-lg font-semibold ${location.pathname === '/admin' ? 'text-srec-primary' : 'text-gray-500 hover:text-gray-900'}`}>Dashboard</Link>
+          ) : isStudent ? (
             <>
-              {showNotificationBell && (
+              {/* Notification Bell */}
+              <button
+                onClick={() => navigate('/notifications')}
+                className="relative p-2 rounded-full hover:bg-srec-primary/5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
+                aria-label="Notifications"
+              >
+                <Bell
+                  size={20}
+                  className={unreadCount > 0 ? 'text-srec-primary' : 'text-gray-500'}
+                />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Profile Avatar with dropdown */}
+              <div className="relative group">
                 <button
-                  onClick={() => navigate('/notifications')}
-                  className="relative p-2 rounded-full text-gray-500 hover:bg-srec-primary/5 hover:text-srec-primary transition-all duration-200"
-                  aria-label="Notifications"
+                  className="w-9 h-9 rounded-full bg-srec-primary text-white text-sm font-bold flex items-center justify-center shadow-sm hover:shadow-md hover:bg-srec-primaryLight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
+                  aria-label="Profile"
                 >
-                  <Bell size={20} />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-                  )}
+                  {initials}
                 </button>
-              )}
+                {/* Dropdown */}
+                <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.10)] border border-gray-100 py-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-150 origin-top-right z-50">
+                  <div className="px-4 py-2.5 border-b border-gray-50">
+                    <p className="text-xs font-semibold text-gray-900 truncate">{user?.name}</p>
+                    <p className="text-[11px] text-gray-400 truncate">{user?.roll_no}</p>
+                  </div>
+                  <Link to="/profile" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    <User size={14} /> Profile
+                  </Link>
+                  <button
+                    onClick={() => { logout(); navigate('/login'); }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                  >
+                    <LogOut size={14} /> Sign Out
+                  </button>
+                </div>
+              </div>
             </>
-          )}
+          ) : null}
         </nav>
       </div>
     </div>

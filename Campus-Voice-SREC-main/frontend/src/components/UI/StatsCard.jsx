@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from '../UI.jsx';
 
-const StatsCard = ({ label, value, icon: Icon, color = 'green', className = '' }) => {
+const StatsCard = ({ label, value, icon: Icon, color = 'green', className = '', onClick }) => {
     const colorStyles = {
         green: 'bg-srec-primary/10 text-srec-primary',
         blue: 'bg-blue-50 text-blue-700',
@@ -12,7 +12,10 @@ const StatsCard = ({ label, value, icon: Icon, color = 'green', className = '' }
     };
 
     return (
-        <div className={`bg-white rounded-2xl p-5 border border-gray-100 shadow-[6px_6px_16px_rgba(0,0,0,0.06),-6px_-6px_16px_rgba(255,255,255,0.9)] flex items-center gap-4 transition-all hover:shadow-lg ${className}`}>
+        <div
+            onClick={onClick}
+            className={`bg-white rounded-2xl p-5 border border-gray-100 shadow-[6px_6px_16px_rgba(0,0,0,0.06),-6px_-6px_16px_rgba(255,255,255,0.9)] flex items-center gap-4 transition-all hover:shadow-lg ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200' : ''} ${className}`}
+        >
             {Icon && (
                 <div className={`p-3 rounded-xl ${colorStyles[color] || colorStyles.green}`}>
                     <Icon size={24} />

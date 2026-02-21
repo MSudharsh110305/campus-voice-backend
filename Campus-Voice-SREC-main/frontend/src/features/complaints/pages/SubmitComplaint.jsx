@@ -53,7 +53,12 @@ export default function SubmitComplaint() {
       }, 4000);
     } catch (err) {
       console.error('Submission error:', err);
-      setError(err.message || 'Failed to submit complaint. Please try again.');
+      const msg = err?.response?.data?.error
+        || err?.response?.data?.detail
+        || (typeof err?.response?.data === 'string' ? err.response.data : null)
+        || (typeof err?.message === 'string' ? err.message : null)
+        || 'Submission failed. Please try again.';
+      setError(msg);
       setSubmitting(false);
     }
   };

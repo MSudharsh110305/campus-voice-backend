@@ -2,7 +2,7 @@ import React from 'react';
 
 export function Card({ children, className = '' }) {
   return (
-    <div className={`bg-white rounded-xl shadow-neu-flat border border-brand/5 border-t-2 border-t-brand/20 hover:shadow-neu-hover hover:-translate-y-[1px] transition-all duration-300 ${className}`}>
+    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm hover:-translate-y-[1px] transition-all duration-300 ${className}`}>
       {children}
     </div>
   );
@@ -12,7 +12,7 @@ export function Card({ children, className = '' }) {
 export { default as Button } from './UI/Button';
 
 export function Skeleton({ className = '' }) {
-  return <div className={`animate-pulse bg-gray-100 rounded ${className}`} />;
+  return <div className={`animate-pulse bg-gray-100 rounded-xl ${className}`} />;
 }
 
 export function Badge({ children, type = 'default', variant = 'status' }) {
@@ -132,6 +132,38 @@ export function Stat({ label, value, color = 'brand' }) {
       <div className="text-sm font-medium opacity-80">{label}</div>
       <div className="text-2xl font-bold mt-1">{value}</div>
     </div>
+  );
+}
+
+export function StatusBadge({ status, className = '' }) {
+  const config = {
+    'Raised':      { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400' },
+    'In Progress': { bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400' },
+    'Resolved':    { bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400' },
+    'Closed':      { bg: 'bg-gray-100',  text: 'text-gray-600',   dot: 'bg-gray-400' },
+    'Spam':        { bg: 'bg-red-50',    text: 'text-red-600',    dot: 'bg-red-400' },
+  };
+  const c = config[status] || config['Raised'];
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${c.bg} ${c.text} ${className}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {status}
+    </span>
+  );
+}
+
+export function PriorityBadge({ priority, className = '' }) {
+  const config = {
+    'Critical': { bg: 'bg-red-50',    text: 'text-red-700' },
+    'High':     { bg: 'bg-orange-50', text: 'text-orange-700' },
+    'Medium':   { bg: 'bg-amber-50',  text: 'text-amber-700' },
+    'Low':      { bg: 'bg-gray-50',   text: 'text-gray-600' },
+  };
+  const c = config[priority] || config['Low'];
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${c.bg} ${c.text} ${className}`}>
+      {priority}
+    </span>
   );
 }
 

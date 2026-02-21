@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { TopNav } from '../../../components/Navbars';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
-import { VOTE_TYPES } from '../../../utils/constants';
+import authorityService from '../../../services/authority.service';
+import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
@@ -17,6 +18,12 @@ export default function ComplaintDetails() {
     const [error, setError] = useState(null);
     const [userVote, setUserVote] = useState(null);
     const [isVoting, setIsVoting] = useState(false);
+    const [voteError, setVoteError] = useState(null);
+
+    const showVoteError = (msg) => {
+        setVoteError(msg);
+        setTimeout(() => setVoteError(null), 4000);
+    };
 
     const [imageUrl, setImageUrl] = useState(null);
     const [imageLoading, setImageLoading] = useState(false);
@@ -80,21 +87,25 @@ export default function ComplaintDetails() {
         const fetchDetails = async () => {
             try {
                 setLoading(true);
-                console.log('🔍 Fetching complaint details for ID:', id);
 
-                const data = await complaintService.getComplaintDetails(id);
-                console.log('✅ Complaint details fetched:', data);
+                // Use authority endpoint for Authority/Admin, student endpoint for students
+                const isAuthorityOrAdmin = user?.role === 'Authority' || user?.role === 'Admin';
+                const data = isAuthorityOrAdmin
+                    ? await authorityService.getComplaintDetails(id)
+                    : await complaintService.getComplaintDetails(id);
                 setComplaint(data);
 
-                // Fetch user's vote with delay to avoid rate limiting
-                setTimeout(async () => {
-                    try {
-                        const voteData = await complaintService.getMyVote(id);
-                        setUserVote(voteData.has_voted ? voteData.vote_type : null);
-                    } catch (voteError) {
-                        console.log("Could not fetch vote status:", voteError.message);
-                    }
-                }, 300);
+                // Only fetch vote status for students
+                if (!isAuthorityOrAdmin) {
+                    setTimeout(async () => {
+                        try {
+                            const voteData = await complaintService.getMyVote(id);
+                            setUserVote(voteData.has_voted ? voteData.vote_type : null);
+                        } catch (voteError) {
+                            console.log("Could not fetch vote status:", voteError.message);
+                        }
+                    }, 300);
+                }
 
                 // Fetch history and timeline with delays
                 setTimeout(fetchHistory, 500);
@@ -114,7 +125,7 @@ export default function ComplaintDetails() {
 
     const handleVote = async (type) => {
         if (!user?.roll_no) {
-            alert("Please login to vote");
+            showVoteError("Please login to vote");
             return;
         }
         if (isVoting) return;
@@ -132,14 +143,14 @@ export default function ComplaintDetails() {
 
         if (isRemoving) {
             // Removing vote
-            if (type === 'upvote') newUpvotes--;
+            if (type === VOTE_TYPES.UPVOTE) newUpvotes--;
             else newDownvotes--;
             setUserVote(null);
         } else {
             // Adding or changing vote
-            if (prevVote === 'upvote') newUpvotes--;
-            if (prevVote === 'downvote') newDownvotes--;
-            if (type === 'upvote') newUpvotes++;
+            if (prevVote === VOTE_TYPES.UPVOTE) newUpvotes--;
+            if (prevVote === VOTE_TYPES.DOWNVOTE) newDownvotes--;
+            if (type === VOTE_TYPES.UPVOTE) newUpvotes++;
             else newDownvotes++;
             setUserVote(type);
         }
@@ -180,13 +191,16 @@ export default function ComplaintDetails() {
             setUserVote(prevVote);
 
             // Show user-friendly error message
-            const errorMsg = error.message?.toLowerCase();
-            if (errorMsg?.includes('greenlet') || errorMsg?.includes('sqlalchemy')) {
-                alert("Server is temporarily busy. Please try again in a moment.");
-            } else if (errorMsg?.includes('rate limit')) {
-                alert("Too many requests. Please wait a moment and try again.");
+            const errMsg = error?.response?.data?.error || error?.response?.data?.detail || '';
+            const errorMsg = (errMsg || error.message || '').toLowerCase();
+            if (errMsg.toLowerCase().includes('own') || errMsg.toLowerCase().includes('cannot vote') || error?.response?.status === 403 || error?.status === 403) {
+                showVoteError("You can't vote on your own complaint");
+            } else if (errorMsg.includes('greenlet') || errorMsg.includes('sqlalchemy')) {
+                showVoteError("Server is temporarily busy. Please try again in a moment.");
+            } else if (errorMsg.includes('rate limit')) {
+                showVoteError("Too many requests. Please wait a moment and try again.");
             } else {
-                alert("Failed to register vote. Please try again.");
+                showVoteError("Vote could not be registered. Please try again.");
             }
         } finally {
             setIsVoting(false);
@@ -254,11 +268,12 @@ export default function ComplaintDetails() {
     }
 
     const isAdmin = user?.role === 'Admin';
+    const isAuthorityOrAdmin = user?.role === 'Authority' || user?.role === 'Admin';
     const isOwner = user?.roll_no && complaint.student_roll_no && user.roll_no === complaint.student_roll_no;
 
     // Sanitize timeline descriptions to protect student identity
     const sanitizeDescription = (description) => {
-        if (!description || isAdmin) return description;
+        if (!description || isAuthorityOrAdmin) return description;
 
         // Replace patterns like "Complaint raised by [Name]" with "Complaint raised by Student"
         return description
@@ -270,7 +285,7 @@ export default function ComplaintDetails() {
 
     // Sanitize names in timeline updated_by field
     const sanitizeName = (name) => {
-        if (!name || isAdmin) return name;
+        if (!name || isAuthorityOrAdmin) return name;
 
         // If it looks like a student name (contains spaces, proper case), hide it
         if (/^[A-Z][a-z]+ [A-Z][a-z]+/.test(name)) {
@@ -279,30 +294,49 @@ export default function ComplaintDetails() {
         return name; // Keep authority/admin names
     };
 
+    // Status banner background
+    const statusBannerClass = {
+        'Raised':      'bg-blue-50 border-blue-100 text-blue-800',
+        'In Progress': 'bg-amber-50 border-amber-100 text-amber-800',
+        'Resolved':    'bg-green-50 border-green-100 text-green-800',
+        'Closed':      'bg-gray-100 border-gray-200 text-gray-700',
+        'Spam':        'bg-red-50 border-red-100 text-red-700',
+    }[complaint.status] || 'bg-blue-50 border-blue-100 text-blue-800';
+
     return (
         <div className="min-h-screen bg-srec-background">
             <TopNav />
 
-            <div className="max-w-3xl mx-auto p-4 sm:p-6 pb-24 md:pl-24 transition-all duration-300">
+            <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
                 <button
                     onClick={() => navigate(-1)}
-                    className="mb-6 flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-srec-primary transition-colors"
+                    className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-srec-primary transition-colors"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                    Back to Feed
+                    Back
                 </button>
+
+                {/* Hero status banner */}
+                <div className={`w-full px-4 py-3 rounded-xl border mb-4 flex items-center justify-between ${statusBannerClass}`}>
+                    <span className="text-sm font-semibold">Status: {complaint.status || 'Raised'}</span>
+                    {complaint.submitted_at && (
+                        <span className="text-xs opacity-70">
+                            {new Date(complaint.submitted_at || complaint.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </span>
+                    )}
+                </div>
 
                 <Card className="overflow-hidden shadow-neu-flat">
                     {complaint?.has_image && (
                         <div className="relative bg-gray-100">
                             {imageLoading ? (
-                                <Skeleton className="w-full h-64 sm:h-96" />
+                                <Skeleton className="w-full h-64 sm:h-80" />
                             ) : imageUrl ? (
                                 <>
                                     <img
                                         src={imageUrl}
                                         alt={complaint.title}
-                                        className="w-full h-64 sm:h-96 object-cover"
+                                        className="w-full h-64 sm:h-80 object-cover rounded-2xl"
                                     />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
                                 </>
@@ -332,8 +366,8 @@ export default function ComplaintDetails() {
 
                         {/* Category & Metadata */}
                         <div className="flex flex-wrap items-center gap-2 mb-8 text-sm">
-                            <Badge type={complaint.category} variant="category">
-                                {complaint.category || 'General'}
+                            <Badge type={complaint.category_name || COMPLAINT_CATEGORIES[complaint.category_id]} variant="category">
+                                {complaint.category_name || COMPLAINT_CATEGORIES[complaint.category_id] || 'General'}
                             </Badge>
                             {complaint.department_code && (
                                 <Badge variant="category" className="bg-blue-50 text-blue-700 border-blue-200">
@@ -399,51 +433,60 @@ export default function ComplaintDetails() {
                             </div>
                         )}
 
-                        {/* Voting & Interaction - Enhanced */}
-                        <div className="py-6 border-t border-b border-gray-100 mb-8 bg-gradient-to-r from-gray-50/50 to-transparent -mx-6 sm:-mx-10 px-6 sm:px-10">
-                            <div className="flex flex-wrap items-center gap-4">
-                                {/* Upvote Button */}
-                                <button
-                                    onClick={() => handleVote(VOTE_TYPES.UPVOTE)}
-                                    disabled={isVoting}
-                                    className={
-                                        `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.UPVOTE
-                                            ? 'bg-srec-primary text-white border-srec-primary shadow-md'
-                                            : 'bg-srec-primary/5 border-srec-primary/20 hover:bg-srec-primary/10'
-                                        } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
-                                    }
-                                >
-                                    <ThumbsUp size={18} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
-                                    <span className="font-bold">{complaint.upvotes || 0}</span>
-                                </button>
+                        {/* Voting & Interaction - Enhanced (students only, hide for Private) */}
+                        {!isAuthorityOrAdmin && complaint.visibility !== 'Private' && <div className="py-6 border-t border-b border-gray-100 mb-8 bg-gradient-to-r from-gray-50/50 to-transparent -mx-6 sm:-mx-10 px-6 sm:px-10">
+                            {isOwner ? (
+                                <p className="text-xs text-gray-400 italic">Your complaint</p>
+                            ) : (
+                                <div className="flex flex-wrap items-center gap-4">
+                                    {/* Upvote Button */}
+                                    <button
+                                        onClick={() => handleVote(VOTE_TYPES.UPVOTE)}
+                                        disabled={isVoting}
+                                        className={
+                                            `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.UPVOTE
+                                                ? 'bg-srec-primary text-white border-srec-primary shadow-md'
+                                                : 'bg-srec-primary/5 border-srec-primary/20 hover:bg-srec-primary/10'
+                                            } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
+                                        }
+                                    >
+                                        <ThumbsUp size={18} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
+                                        <span className="font-bold">{complaint.upvotes || 0}</span>
+                                    </button>
 
-                                {/* Downvote Button */}
-                                <button
-                                    onClick={() => handleVote(VOTE_TYPES.DOWNVOTE)}
-                                    disabled={isVoting}
-                                    className={
-                                        `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.DOWNVOTE
-                                            ? 'bg-srec-danger text-white border-srec-danger shadow-md'
-                                            : 'bg-srec-danger/5 border-srec-danger/20 hover:bg-srec-danger/10'
-                                        } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
-                                    }
-                                >
-                                    <ThumbsDown size={18} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
-                                    <span className="font-bold text-gray-700">{complaint.downvotes || 0}</span>
-                                </button>
+                                    {/* Downvote Button */}
+                                    <button
+                                        onClick={() => handleVote(VOTE_TYPES.DOWNVOTE)}
+                                        disabled={isVoting}
+                                        className={
+                                            `flex items-center gap-2 px-4 py-2.5 rounded-xl border shadow-sm transition-all duration-200 ${userVote === VOTE_TYPES.DOWNVOTE
+                                                ? 'bg-srec-danger text-white border-srec-danger shadow-md'
+                                                : 'bg-srec-danger/5 border-srec-danger/20 hover:bg-srec-danger/10'
+                                            } ${isVoting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
+                                        }
+                                    >
+                                        <ThumbsDown size={18} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
+                                        <span className="font-bold text-gray-700">{complaint.downvotes || 0}</span>
+                                    </button>
 
-                                {/* Net Score */}
-                                <div className="text-sm text-gray-500 ml-auto font-medium bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
-                                    Net Score: <span className={`font-bold ${complaint.net_votes > 0 ? 'text-green-600' : complaint.net_votes < 0 ? 'text-red-500' : 'text-gray-900'}`}>{complaint.net_votes || 0}</span>
+                                    {/* Net Score */}
+                                    <div className="text-sm text-gray-500 ml-auto font-medium bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
+                                        Net Score: <span className={`font-bold ${complaint.net_votes > 0 ? 'text-green-600' : complaint.net_votes < 0 ? 'text-red-500' : 'text-gray-900'}`}>{complaint.net_votes || 0}</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-4 font-medium">
-                                👆 Votes help authorities prioritise this issue
-                            </p>
-                        </div>
+                            )}
+                            {voteError && (
+                                <p className="text-xs text-amber-600 mt-1 text-center">{voteError}</p>
+                            )}
+                            {!isOwner && (
+                                <p className="text-xs text-gray-400 mt-4 font-medium">
+                                    👆 Votes help authorities prioritise this issue
+                                </p>
+                            )}
+                        </div>}
 
                         {/* Details Grid */}
-                        <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-6 mb-8 p-6 rounded-xl border border-gray-100 bg-gray-50/50`}>
+                        <div className={`grid grid-cols-1 ${isAuthorityOrAdmin ? 'sm:grid-cols-2' : ''} gap-6 mb-8 p-6 rounded-xl border border-gray-100 bg-gray-50/50`}>
                             {/* Student Info Section */}
                             <div className="space-y-4">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
@@ -456,10 +499,10 @@ export default function ComplaintDetails() {
                                         </div>
                                         <div>
                                             <div className="font-bold text-gray-900">
-                                                {isAdmin ? complaint.student_roll_no : 'Student'}
+                                                {isAuthorityOrAdmin ? complaint.student_roll_no : 'Student'}
                                             </div>
                                             <div className="text-xs text-gray-500">
-                                                {isAdmin ? 'Full identity visible to authorities' : 'Identity protected'}
+                                                {user?.role === 'Admin' ? 'Full identity — Admin View' : isAuthorityOrAdmin ? 'Full identity visible to you' : 'Identity protected'}
                                             </div>
                                         </div>
                                     </div>

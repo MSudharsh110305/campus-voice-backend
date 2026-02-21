@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import LoginPage from './features/auth/pages/LoginPage';
 import AuthorityLoginPage from './features/auth/pages/AuthorityLoginPage';
 import StudentHome from './features/complaints/pages/StudentHome';
@@ -57,10 +58,11 @@ function DashboardRedirect() {
 export default function App() {
   return (
     <AuthProvider>
+      <NotificationProvider>
       <InstallPrompt />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/authority-login" element={<AuthorityLoginPage />} />
+        <Route path="/authority-login" element={<Navigate to="/login?role=authority" replace />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/dashboard" element={<DashboardRedirect />} />
@@ -170,6 +172,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

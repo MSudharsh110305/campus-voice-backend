@@ -15,7 +15,7 @@ CRUD operations, voting, filtering, image upload, verification, tracking.
 import logging
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -472,6 +472,51 @@ async def upload_complaint_image(
         )
 
 
+async def get_complaint_for_image(
+    complaint_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Flexible visibility dependency for image access.
+    Accepts student, authority, AND admin tokens — unlike get_complaint_with_visibility
+    which only accepts student tokens.
+    """
+    from src.services.auth_service import AuthService
+    from src.repositories.complaint_repo import ComplaintRepository
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    auth_svc = AuthService()
+    payload = auth_svc.decode_token(auth_header[7:])
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    role = (payload.get("role") or "").lower()
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    # Admin and authority can see any complaint image
+    if role in ("admin", "authority"):
+        return complaint
+
+    # Student: enforce visibility rules
+    from src.repositories.student_repo import StudentRepository
+    from src.api.dependencies import check_complaint_visibility
+
+    roll_no = payload.get("sub", "")
+    student_repo = StudentRepository(db)
+    student = await student_repo.get_with_department(roll_no)
+    can_view = await check_complaint_visibility(complaint, student)
+    if not can_view:
+        raise HTTPException(status_code=403, detail="You don't have permission to view this image")
+    return complaint
+
+
 @router.get(
     "/{complaint_id}/image",
     summary="Get complaint image",
@@ -486,7 +531,7 @@ async def upload_complaint_image(
 async def get_complaint_image(
     complaint_id: UUID,
     thumbnail: bool = Query(False, description="Return thumbnail (200x200) instead of full image"),
-    complaint = Depends(get_complaint_with_visibility),
+    complaint = Depends(get_complaint_for_image),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -765,11 +810,25 @@ async def flag_as_spam(
     complaint.spam_flagged_at = datetime.now(timezone.utc)
     complaint.status = "Spam"
     complaint.updated_at = datetime.now(timezone.utc)
-    
+
     await db.commit()
-    
+
+    # Notify the student that their complaint was flagged as spam
+    try:
+        from src.services.notification_service import notification_service
+        await notification_service.create_notification(
+            db=db,
+            recipient_type="Student",
+            recipient_id=complaint.student_roll_no,
+            complaint_id=complaint_id,
+            notification_type="complaint_spam",
+            message=f"Your complaint has been reviewed and marked as spam. Reason: {reason}",
+        )
+    except Exception as _notif_err:
+        logger.warning(f"Failed to send spam notification to student: {_notif_err}")
+
     logger.info(f"Complaint {complaint_id} flagged as spam by authority {authority_id}")
-    
+
     return SuccessResponse(
         success=True,
         message="Complaint flagged as spam"

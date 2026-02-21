@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge } from '../../../components/UI';
+import { StatusBadge, PriorityBadge } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import { ThumbsUp, ThumbsDown, Sparkles, FileX } from 'lucide-react';
@@ -17,7 +17,6 @@ export default function ComplaintCard({
   category,
   department_code,
   img,
-  // img, // Removed img prop
   author,
   status,
   priority,
@@ -25,14 +24,25 @@ export default function ComplaintCard({
   downvotes,
   timestamp,
   isOwner = false,
-  has_image = false // Added has_image prop
+  has_image = false
 }) {
   const { user } = useAuth();
+  const [expanded, setExpanded] = useState(false);
   const [voteCount, setVoteCount] = useState({ up: upvotes || 0, down: downvotes || 0 });
   const [userVote, setUserVote] = useState(null);
   const [isVoting, setIsVoting] = useState(false);
-  const [imageUrl, setImageUrl] = useState(null); // Added imageUrl state
-  const [imageLoading, setImageLoading] = useState(false); // Added imageLoading state
+  const [voteError, setVoteError] = useState(null);
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+
+  const TRUNCATE_LEN = 150;
+  const bodyText = isOwner ? null : (rephrased_text || summary || desc || '');
+  const isLong = bodyText && bodyText.length > TRUNCATE_LEN;
+
+  const showVoteError = (msg) => {
+    setVoteError(msg);
+    setTimeout(() => setVoteError(null), 3000);
+  };
 
   // Fetch user's existing vote on mount - with delay to prevent rate limiting
   useEffect(() => {
@@ -41,12 +51,10 @@ export default function ComplaintCard({
         const voteData = await complaintService.getMyVote(id);
         setUserVote(voteData.has_voted ? voteData.vote_type : null);
       } catch (error) {
-        // Silently fail - user can still vote, we just don't show existing vote
         console.log("Could not fetch vote status:", error.message);
       }
     };
 
-    // Add small random delay to spread out API calls and avoid rate limiting
     const delay = Math.random() * 500;
     const timer = setTimeout(fetchMyVote, delay);
     return () => clearTimeout(timer);
@@ -58,7 +66,6 @@ export default function ComplaintCard({
     if (has_image) {
       setImageLoading(true);
 
-      // Add small random delay to spread out API calls and avoid rate limiting
       const delay = Math.random() * 800;
       const timer = setTimeout(() => {
         complaintService.fetchImage(id, true)
@@ -67,7 +74,7 @@ export default function ComplaintCard({
           })
           .catch(err => {
             console.log("Could not fetch thumbnail:", err.message);
-            if (active) setImageUrl(null); // Set to null on error to show fallback
+            if (active) setImageUrl(null);
           })
           .finally(() => {
             if (active) setImageLoading(false);
@@ -82,7 +89,7 @@ export default function ComplaintCard({
         }
       };
     } else {
-      setImageUrl(null); // Ensure no image is shown if has_image is false
+      setImageUrl(null);
     }
 
     return () => {
@@ -101,29 +108,25 @@ export default function ComplaintCard({
   const handleVote = async (e, type) => {
     e.preventDefault();
     if (!user?.roll_no) {
-      alert("Please login to vote");
+      showVoteError("Please login to vote");
       return;
     }
     if (isVoting) return;
 
     setIsVoting(true);
 
-    // Store previous state for rollback
     const prevVote = userVote;
     const prevCount = { ...voteCount };
 
-    // Optimistic UI update
     const isRemoving = userVote === type;
     let newUp = voteCount.up;
     let newDown = voteCount.down;
 
     if (isRemoving) {
-      // Removing vote
       if (type === VOTE_TYPES.UPVOTE) newUp--;
       else newDown--;
       setUserVote(null);
     } else {
-      // Adding or changing vote
       if (prevVote === VOTE_TYPES.UPVOTE) newUp--;
       if (prevVote === VOTE_TYPES.DOWNVOTE) newDown--;
       if (type === VOTE_TYPES.UPVOTE) newUp++;
@@ -136,15 +139,12 @@ export default function ComplaintCard({
     try {
       let response;
 
-      // If clicking same vote type, remove vote
       if (isRemoving) {
         response = await complaintService.removeVote(id);
       } else {
-        // Add or change vote
         response = await complaintService.voteOnComplaint(id, type);
       }
 
-      // Update with actual backend response
       setVoteCount({
         up: response.upvotes,
         down: response.downvotes
@@ -154,34 +154,47 @@ export default function ComplaintCard({
     } catch (error) {
       console.error("Vote failed:", error);
 
-      // Rollback optimistic update
       setVoteCount(prevCount);
       setUserVote(prevVote);
 
-      // Show user-friendly error message
-      const errorMsg = error.message?.toLowerCase();
-      if (errorMsg?.includes('greenlet') || errorMsg?.includes('sqlalchemy')) {
-        alert("Server is temporarily busy. Please try again in a moment.");
-      } else if (errorMsg?.includes('rate limit')) {
-        alert("Too many requests. Please wait a moment and try again.");
+      const errMsg = error?.response?.data?.error || error?.response?.data?.detail || '';
+      const errorMsg = (errMsg || error.message || '').toLowerCase();
+      if (errMsg.toLowerCase().includes('own') || errMsg.toLowerCase().includes('cannot vote') || error?.response?.status === 403 || error?.status === 403) {
+        showVoteError("You can't vote on your own complaint");
+      } else if (errorMsg.includes('greenlet') || errorMsg.includes('sqlalchemy')) {
+        showVoteError("Server is temporarily busy. Please try again in a moment.");
+      } else if (errorMsg.includes('rate limit')) {
+        showVoteError("Too many requests. Please wait a moment and try again.");
       } else {
-        alert("Failed to register vote. Please try again.");
+        showVoteError("Vote could not be registered. Please try again.");
       }
     } finally {
       setIsVoting(false);
     }
   };
 
-  // Display logic based on ownership
-  // Public view: Show AI rephrased_text (or fallback to summary/desc)
-  // Owner view: Show both description and summary
   const displayContent = isOwner ? null : (rephrased_text || summary || desc);
+
+  // Time ago helper
+  const timeAgo = (ts) => {
+    if (!ts) return '';
+    const now = Date.now();
+    const diff = now - new Date(ts).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString();
+  };
 
   return (
     <Link to={`/complaint/${id}`} className="block group">
-      <div className="bg-srec-card rounded-xl shadow-neu-flat border border-white/60 overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-neu-hover hover:-translate-y-0.5 cursor-pointer">
         {has_image && (
-          <div className="relative h-48 overflow-hidden bg-gray-100">
+          <div className="relative h-44 overflow-hidden bg-gray-100">
             {imageLoading ? (
               <Skeleton className="w-full h-full" />
             ) : imageUrl ? (
@@ -192,125 +205,111 @@ export default function ComplaintCard({
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                <FileX size={32} strokeWidth={1.5} />
-                <span className="text-xs mt-2">Image failed to load</span>
+                <FileX size={28} strokeWidth={1.5} />
+                <span className="text-xs mt-1">Image failed to load</span>
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-60"></div>
           </div>
         )}
 
-        <div className="p-5">
-          {/* Badges row - always visible */}
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge type={status} variant="status">{status || 'Pending'}</Badge>
-              {priority && (
-                <Badge type={priority} variant="priority">{priority}</Badge>
+        <div className="p-4">
+          {/* Top row: category chip left, status badge right */}
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {category && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-srec-primary/10 text-srec-primary border border-srec-primary/20">
+                  {category}
+                </span>
+              )}
+              {department_code && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  {department_code}
+                </span>
               )}
             </div>
-            <span className="text-xs text-gray-400">
-              {timestamp ? new Date(timestamp).toLocaleDateString() : ''}
-            </span>
+            <StatusBadge status={status || 'Raised'} />
           </div>
 
           {/* Title */}
-          <h3 className="font-bold text-lg text-gray-900 mb-2 leading-tight group-hover:text-srec-primary transition-colors">{title}</h3>
-
-          {/* Content display based on ownership */}
-          {isOwner ? (
-            <>
-              {/* Owner view: Show both description and AI summary */}
-              {desc && (
-                <div className="mb-3">
-                  <div className="text-xs text-gray-500 font-medium mb-1">Your submitted description</div>
-                  <p className="text-gray-600 text-sm line-clamp-2 leading-relaxed">{desc}</p>
-                </div>
-              )}
-              {summary && (
-                <div>
-                  <div className="flex items-center gap-1.5 text-xs text-srec-primary font-medium mb-1">
-                    <Sparkles size={12} className="text-srec-primary" />
-                    <span>Reviewed Summary</span>
-                  </div>
-                  <p className="text-gray-600 text-sm line-clamp-2 leading-relaxed">{summary}</p>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Public view: Only show AI summary */}
-              {summary && (
-                <div className="flex items-center gap-1.5 text-xs text-srec-primary font-medium mb-1.5">
-                  <Sparkles size={12} className="text-srec-primary" />
-                  <span>Reviewed Summary</span>
-                </div>
-              )}
-              <p className="text-gray-600 text-sm mb-4 line-clamp-3 leading-relaxed">{displayContent}</p>
-            </>
+          {title && (
+            <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-snug group-hover:text-srec-primary transition-colors line-clamp-1">{title}</h3>
           )}
 
-          {/* Category Badge + Metadata */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {category && (
-              <Badge type={category} variant="category">{category}</Badge>
-            )}
-            {department_code && (
-              <Badge variant="category" className="bg-blue-50 text-blue-700 border-blue-200">
-                {department_code}
-              </Badge>
-            )}
-            {img && timestamp && (
-              <span className="text-xs text-gray-400 ml-auto">
-                {new Date(timestamp).toLocaleDateString()}
-              </span>
-            )}
+          {/* Content — expandable */}
+          {isOwner ? (
+            <div className="mb-3">
+              <p className="text-gray-500 text-sm leading-relaxed">{desc || summary}</p>
+            </div>
+          ) : (
+            <div className="mb-3" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <p className="text-gray-500 text-sm leading-relaxed">
+                {expanded || !isLong ? bodyText : bodyText.slice(0, TRUNCATE_LEN) + '…'}
+              </p>
+              {isLong && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpanded(v => !v); }}
+                  className="text-xs text-srec-primary font-semibold mt-1 hover:underline"
+                >
+                  {expanded ? 'Show less' : 'Read more'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Footer: timestamp left, priority badge right */}
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+            <span className="text-xs text-gray-400">{timeAgo(timestamp)}</span>
+            <PriorityBadge priority={priority || 'Low'} />
           </div>
 
-          {/* Voting Section with helper text */}
-          <div className="pt-4 border-t border-gray-100">
-            <div className="flex items-center gap-3">
-              {/* Upvote Button */}
-              <button
-                onClick={(e) => handleVote(e, VOTE_TYPES.UPVOTE)}
-                disabled={isVoting}
-                className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm
-                  transition-all duration-200
-                  ${userVote === VOTE_TYPES.UPVOTE
-                    ? 'bg-emerald-100 text-emerald-700 shadow-inner border border-emerald-200'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600 hover:shadow-vote-glow'
-                  }
-                  active:scale-95
-                `}
-                title="Upvote"
-              >
-                <ThumbsUp size={16} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
-                <span>{voteCount.up}</span>
-              </button>
+          {/* Vote row */}
+          <div className="flex items-center gap-2 mt-3">
+            {isOwner ? (
+              <span className="text-xs text-gray-400 italic">Your complaint</span>
+            ) : (
+              <>
+                <button
+                  onClick={(e) => handleVote(e, VOTE_TYPES.UPVOTE)}
+                  disabled={isVoting}
+                  className={`
+                    flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold
+                    transition-all duration-200
+                    ${userVote === VOTE_TYPES.UPVOTE
+                      ? 'bg-srec-primary text-white shadow-sm'
+                      : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-srec-primary/10 hover:border-srec-primary/30 hover:text-srec-primary hover:shadow-vote-glow'
+                    }
+                    active:scale-95
+                  `}
+                  title="Upvote"
+                >
+                  <ThumbsUp size={12} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
+                  <span>{voteCount.up}</span>
+                </button>
 
-              {/* Downvote Button */}
-              <button
-                onClick={(e) => handleVote(e, VOTE_TYPES.DOWNVOTE)}
-                disabled={isVoting}
-                className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm
-                  transition-all duration-200
-                  ${userVote === VOTE_TYPES.DOWNVOTE
-                    ? 'bg-srec-danger/10 text-srec-danger shadow-inner border border-srec-danger/20'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-srec-danger/5 hover:border-srec-danger/30 hover:text-srec-danger hover:shadow-vote-glow-down'
-                  }
-                  active:scale-95
-                `}
-                title="Downvote"
-              >
-                <ThumbsDown size={16} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
-                <span>{voteCount.down}</span>
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mt-3 font-medium">
-              👆 Helps authorities prioritise this issue
-            </p>
+                <button
+                  onClick={(e) => handleVote(e, VOTE_TYPES.DOWNVOTE)}
+                  disabled={isVoting}
+                  className={`
+                    flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold
+                    transition-all duration-200
+                    ${userVote === VOTE_TYPES.DOWNVOTE
+                      ? 'bg-srec-danger text-white shadow-sm'
+                      : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-srec-danger/5 hover:border-srec-danger/30 hover:text-srec-danger'
+                    }
+                    active:scale-95
+                  `}
+                  title="Downvote"
+                >
+                  <ThumbsDown size={12} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
+                  <span>{voteCount.down}</span>
+                </button>
+              </>
+            )}
+
+            {voteError && (
+              <p className="text-xs text-amber-600 mt-1 text-center">{voteError}</p>
+            )}
           </div>
         </div>
       </div>

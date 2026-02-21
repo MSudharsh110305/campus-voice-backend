@@ -1,149 +1,169 @@
-import React from 'react';
-import { Badge, EliteButton } from '../../../components/UI';
+import React, { useState, useEffect } from 'react';
+import { StatusBadge, PriorityBadge, EliteButton } from '../../../components/UI';
 import { format } from 'date-fns';
 import { MessageSquare, ThumbsUp, Image as ImageIcon, ArrowUpCircle, MessageCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { VALID_STATUS_TRANSITIONS } from '../../../utils/constants';
 
-const priorityColors = {
-    Critical: 'red',
-    High: 'orange',
-    Medium: 'amber',
-    Low: 'gray'
-};
+function AuthenticatedImage({ complaintId, token, className = '', thumbnail = false }) {
+    const [src, setSrc] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
 
-const statusColors = {
-    Resolved: 'green',
-    'In Progress': 'blue',
-    Raised: 'yellow',
-    Closed: 'gray',
-    Spam: 'red'
-};
+    useEffect(() => {
+        if (!complaintId || !token) return;
+        let objectUrl = null;
+        setLoading(true);
+        setError(false);
+        const url = `/api/complaints/${complaintId}/image${thumbnail ? '?thumbnail=true' : ''}`;
+        fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+            .then(res => {
+                if (!res.ok) throw new Error('Failed');
+                return res.blob();
+            })
+            .then(blob => {
+                objectUrl = URL.createObjectURL(blob);
+                setSrc(objectUrl);
+            })
+            .catch(() => setError(true))
+            .finally(() => setLoading(false));
+        return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }, [complaintId, token, thumbnail]);
 
-const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEscalate }) => {
+    if (loading) return <div className={`animate-pulse bg-gray-100 rounded-xl ${className}`} />;
+    if (error) return null;
+    return <img src={src} alt="Complaint" className={className} />;
+}
+
+const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEscalate, token }) => {
     const navigate = useNavigate();
+    const [expanded, setExpanded] = useState(false);
     const validTransitions = VALID_STATUS_TRANSITIONS[complaint.status] || [];
     const canTransition = validTransitions.length > 0;
     const isClosed = complaint.status === 'Closed' || complaint.status === 'Spam';
+    const bodyText = complaint.rephrased_text || complaint.original_text || '';
+    const TRUNCATE_LEN = 140;
+    const isLong = bodyText.length > TRUNCATE_LEN;
 
     return (
         <div
-            className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md cursor-pointer"
             onClick={() => navigate(`/complaint/${complaint.id}`)}
         >
-            {/* Header: Status & Priority */}
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <Badge color={statusColors[complaint.status] || 'gray'}>{complaint.status}</Badge>
-                    <Badge color={priorityColors[complaint.priority] || 'gray'}>{complaint.priority}</Badge>
-                    <span className="text-xs text-gray-400 font-medium">
-                        #{complaint.id?.toString().slice(-6)}
-                    </span>
+            {/* Complaint image if present */}
+            {complaint.has_image && token && (
+                <AuthenticatedImage
+                    complaintId={complaint.id}
+                    token={token}
+                    thumbnail={true}
+                    className="w-full h-32 object-cover"
+                />
+            )}
+
+            <div className="p-4">
+            {/* Top: student info + date */}
+            <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="min-w-0">
+                    <p className="text-xs text-gray-500 font-medium truncate">
+                        {complaint.student_name || complaint.student_roll_no || 'Anonymous'}
+                        {complaint.student_roll_no && complaint.student_name && (
+                            <span className="text-gray-400 ml-1">· {complaint.student_roll_no}</span>
+                        )}
+                    </p>
                 </div>
-                <span className="text-xs text-gray-500 font-medium whitespace-nowrap">
+                <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
                     {complaint.submitted_at
                         ? format(new Date(complaint.submitted_at), 'MMM dd, h:mm a')
                         : 'Unknown date'}
                 </span>
             </div>
 
-            {/* Content */}
-            <div className="mb-4">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-1">
-                            {complaint.category_name || 'General Complaint'}
-                        </h3>
-                        <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
-                            {complaint.rephrased_text || complaint.original_text}
-                        </p>
-                        {complaint.student_roll_no && (
-                            <p className="text-xs text-gray-400 mt-1">
-                                Student: {complaint.student_name || complaint.student_roll_no}
-                            </p>
-                        )}
-                    </div>
-                    {complaint.has_image && (
-                        <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
-                            <ImageIcon size={18} className="text-gray-400" />
-                        </div>
-                    )}
+            {/* Category chip */}
+            {complaint.category_name && (
+                <div className="mb-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-srec-primary/10 text-srec-primary border border-srec-primary/20">
+                        {complaint.category_name}
+                    </span>
                 </div>
+            )}
+
+            {/* Content */}
+            <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                <p className="text-sm text-gray-700 leading-relaxed font-medium">
+                    {expanded || !isLong ? bodyText : bodyText.slice(0, TRUNCATE_LEN) + '…'}
+                </p>
+                {isLong && (
+                    <button
+                        onClick={() => setExpanded(v => !v)}
+                        className="text-xs text-srec-primary font-semibold mt-1 hover:underline"
+                    >
+                        {expanded ? 'Show less' : 'Read more'}
+                    </button>
+                )}
             </div>
 
-            {/* Footer: Meta & Actions */}
-            <div className="flex items-center justify-between border-t border-gray-50 pt-4 gap-2 flex-wrap">
-                <div className="flex items-center gap-3 text-gray-400">
-                    <div className="flex items-center gap-1 text-xs font-medium">
-                        <ThumbsUp size={13} />
-                        <span>{complaint.upvotes || 0}</span>
-                    </div>
-                    {complaint.vote_count !== undefined && (
-                        <div className="flex items-center gap-1 text-xs font-medium">
-                            <MessageSquare size={13} />
-                            <span>{complaint.vote_count}</span>
-                        </div>
-                    )}
-                </div>
+            {/* Status + Priority row */}
+            <div className="flex items-center gap-2 mb-3">
+                <StatusBadge status={complaint.status} />
+                <PriorityBadge priority={complaint.priority} />
+                {complaint.has_image && (
+                    <span className="ml-auto">
+                        <ImageIcon size={14} className="text-gray-400" />
+                    </span>
+                )}
+            </div>
 
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {/* Status update — only if valid transitions exist */}
-                    {canTransition && (
-                        <EliteButton
-                            size="sm"
-                            variant="primary"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onStatusUpdate(e, complaint.id, complaint.status);
-                            }}
-                        >
-                            Update Status
-                        </EliteButton>
-                    )}
-
-                    {/* Post public update — only on active complaints */}
-                    {!isClosed && onPostUpdate && (
-                        <EliteButton
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onPostUpdate(e, complaint.id);
-                            }}
-                        >
-                            <MessageCircle size={13} className="mr-1" />
-                            Post Update
-                        </EliteButton>
-                    )}
-
-                    {/* Escalate — only on active complaints */}
-                    {!isClosed && onEscalate && (
-                        <EliteButton
-                            size="sm"
-                            variant="outline"
-                            className="text-amber-600 border-amber-200 hover:bg-amber-50"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onEscalate(e, complaint.id);
-                            }}
-                        >
-                            <ArrowUpCircle size={13} className="mr-1" />
-                            Escalate
-                        </EliteButton>
-                    )}
-
-                    {/* View Detail */}
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 pt-3 border-t border-gray-50 flex-wrap">
+                {canTransition && (
                     <EliteButton
                         size="sm"
-                        variant="ghost"
+                        variant="primary"
                         onClick={(e) => {
                             e.stopPropagation();
-                            navigate(`/complaint/${complaint.id}`);
+                            onStatusUpdate(e, complaint.id, complaint.status);
                         }}
                     >
-                        View
+                        Update Status
                     </EliteButton>
-                </div>
+                )}
+
+                {!isClosed && onPostUpdate && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onPostUpdate(e, complaint.id);
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:border-srec-primary hover:text-srec-primary transition-all duration-200"
+                    >
+                        <MessageCircle size={12} />
+                        Post Update
+                    </button>
+                )}
+
+                {!isClosed && onEscalate && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEscalate(e, complaint.id);
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 rounded-lg hover:border-amber-400 hover:text-amber-600 transition-all duration-200"
+                    >
+                        <ArrowUpCircle size={12} />
+                        Escalate
+                    </button>
+                )}
+
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/complaint/${complaint.id}`);
+                    }}
+                    className="ml-auto text-xs text-gray-400 hover:text-srec-primary transition-colors font-medium"
+                >
+                    View details
+                </button>
+            </div>
             </div>
         </div>
     );

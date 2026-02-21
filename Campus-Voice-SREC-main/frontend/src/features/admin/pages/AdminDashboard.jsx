@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
+import ExportModal from '../../../components/ExportModal';
 import adminService from '../../../services/admin.service';
 import { Card, Select, Skeleton, EliteButton } from '../../../components/UI';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { AlertTriangle, CheckCircle, Users, FileText, Activity, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Users, FileText, Activity, ArrowUpRight, Download } from 'lucide-react';
 import AdminComplaintCard from '../components/AdminComplaintCard';
 
 // Simple stats card for admin dashboard
-function StatCard({ label, value, icon: Icon, color = 'blue', sub }) {
+function StatCard({ label, value, icon: Icon, color = 'blue', sub, onClick }) {
   const colorMap = {
     blue:   'bg-blue-50 text-blue-600',
     green:  'bg-green-50 text-green-600',
@@ -20,15 +21,19 @@ function StatCard({ label, value, icon: Icon, color = 'blue', sub }) {
     purple: 'bg-purple-50 text-purple-600',
   };
   return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-2xl p-6 border border-gray-100 shadow-sm transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 group' : ''}`}
+    >
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-gray-500">{label}</span>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color] || colorMap.blue}`}>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color] || colorMap.blue} ${onClick ? 'group-hover:scale-110 transition-transform duration-200' : ''}`}>
           <Icon size={20} />
         </div>
       </div>
       <p className="text-3xl font-bold text-gray-900">{value ?? '—'}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      {onClick && <p className="text-xs text-srec-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-medium">View details →</p>}
     </div>
   );
 }
@@ -38,10 +43,12 @@ const PIE_COLORS = ['#14532D', '#D4AF37', '#22C55E', '#EF4444', '#6366F1'];
 export default function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const analyticsRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [error, setError] = useState(null);
+  const [showExport, setShowExport] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'Admin') return;
@@ -122,6 +129,56 @@ export default function AdminDashboard() {
   // Build status bar data
   const statusData = Object.entries(byStatus).map(([name, value]) => ({ name, value }));
 
+  const exportSections = [
+    {
+      id: 'overview',
+      label: 'System Overview',
+      stats: [
+        { label: 'Total Complaints', value: totalComplaints },
+        { label: 'Total Students', value: totalStudents },
+        { label: 'Total Authorities', value: totalAuthorities },
+        { label: 'Recent (7 days)', value: recent7d },
+        { label: 'Resolved', value: resolved },
+        { label: 'Resolution Rate', value: `${resolutionRate}%` },
+        { label: 'Critical Issues', value: criticalCount },
+      ],
+    },
+    {
+      id: 'by_status',
+      label: 'Complaints by Status',
+      tableHeaders: ['Status', 'Count'],
+      tableRows: Object.entries(byStatus).map(([s, c]) => [s, c]),
+    },
+    {
+      id: 'by_priority',
+      label: 'Complaints by Priority',
+      tableHeaders: ['Priority', 'Count'],
+      tableRows: ['Critical', 'High', 'Medium', 'Low'].map(p => [p, byPriority[p] || 0]),
+    },
+    {
+      id: 'by_category',
+      label: 'Complaints by Category',
+      tableHeaders: ['Category', 'Count'],
+      tableRows: Object.entries(byCategory).map(([c, v]) => [c, v]),
+    },
+    ...(analytics ? [{
+      id: 'analytics',
+      label: `Analytics (Last ${analytics.period_days || 30} Days)`,
+      stats: [
+        { label: 'Total Submitted', value: analytics.total_complaints },
+        { label: 'Resolved', value: analytics.resolved_complaints },
+        { label: 'Resolution Rate', value: analytics.resolution_rate_percent != null ? `${Math.round(analytics.resolution_rate_percent)}%` : '—' },
+        { label: 'Avg Resolution Time', value: analytics.avg_resolution_time_hours != null ? `${Math.round(analytics.avg_resolution_time_hours)}h` : '—' },
+      ],
+    }] : []),
+    ...(dailyData.length > 0 ? [{
+      id: 'daily_trend',
+      label: 'Daily Complaint Trend',
+      tableHeaders: ['Date', 'Count'],
+      tableRows: dailyData.map(d => [d.date, d.count]),
+    }] : []),
+  ];
+
   return (
     <div className="space-y-8 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -130,7 +187,12 @@ export default function AdminDashboard() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
           <p className="text-gray-500 mt-1">Real-time overview of system performance and grievance resolution</p>
         </div>
-        <EliteButton variant="outline" onClick={loadOverview}>Refresh Data</EliteButton>
+        <div className="flex items-center gap-3">
+          <EliteButton variant="outline" onClick={loadOverview}>Refresh Data</EliteButton>
+          <EliteButton onClick={() => setShowExport(true)} className="flex items-center gap-2">
+            <Download size={16} /> Export
+          </EliteButton>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -141,13 +203,15 @@ export default function AdminDashboard() {
           icon={FileText}
           color="blue"
           sub={`${recent7d} in last 7 days`}
+          onClick={() => navigate('/admin/complaints')}
         />
         <StatCard
           label="Resolution Rate"
           value={`${resolutionRate}%`}
           icon={CheckCircle}
           color="green"
-          sub={`${resolved} resolved`}
+          sub={`${resolved} resolved of ${totalComplaints} total`}
+          onClick={() => analyticsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
         <StatCard
           label="Critical Issues"
@@ -155,6 +219,7 @@ export default function AdminDashboard() {
           icon={AlertTriangle}
           color="red"
           sub={`${byPriority['High'] || 0} High priority`}
+          onClick={() => navigate('/admin/complaints?priority=Critical')}
         />
         <StatCard
           label="Total Users"
@@ -162,21 +227,26 @@ export default function AdminDashboard() {
           icon={Users}
           color="purple"
           sub={`${totalStudents} students · ${totalAuthorities} authorities`}
+          onClick={() => navigate('/admin/authorities')}
         />
       </div>
 
-      {/* Status breakdown */}
+      {/* Status breakdown — clickable */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {Object.entries(byStatus).map(([status, count]) => {
           const colors = {
-            Raised: 'bg-yellow-50 border-yellow-100 text-yellow-700',
-            'In Progress': 'bg-blue-50 border-blue-100 text-blue-700',
-            Resolved: 'bg-green-50 border-green-100 text-green-700',
-            Closed: 'bg-gray-50 border-gray-100 text-gray-600',
-            Spam: 'bg-red-50 border-red-100 text-red-600',
+            Raised: 'bg-yellow-50 border-yellow-100 text-yellow-700 hover:border-yellow-300',
+            'In Progress': 'bg-blue-50 border-blue-100 text-blue-700 hover:border-blue-300',
+            Resolved: 'bg-green-50 border-green-100 text-green-700 hover:border-green-300',
+            Closed: 'bg-gray-50 border-gray-100 text-gray-600 hover:border-gray-300',
+            Spam: 'bg-red-50 border-red-100 text-red-600 hover:border-red-300',
           };
           return (
-            <div key={status} className={`rounded-xl border px-4 py-3 text-center ${colors[status] || 'bg-gray-50 border-gray-100 text-gray-600'}`}>
+            <div
+              key={status}
+              onClick={() => navigate(`/admin/complaints?status=${encodeURIComponent(status)}`)}
+              className={`rounded-xl border px-4 py-3 text-center cursor-pointer transition-all duration-150 hover:shadow-sm ${colors[status] || 'bg-gray-50 border-gray-100 text-gray-600'}`}
+            >
               <p className="text-2xl font-bold">{count}</p>
               <p className="text-xs font-medium mt-0.5">{status}</p>
             </div>
@@ -262,30 +332,71 @@ export default function AdminDashboard() {
       </div>
 
       {/* Analytics Summary Row */}
-      {analytics && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div ref={analyticsRef} className="scroll-mt-6">
+        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+          Resolution Analytics (last {analytics?.period_days || 30} days)
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-gray-900">{analytics.total_complaints || 0}</p>
-            <p className="text-sm text-gray-500 mt-1">Total (last {analytics.period_days}d)</p>
+            <p className="text-2xl font-bold text-gray-900">{analytics?.total_complaints || 0}</p>
+            <p className="text-xs text-gray-500 mt-1 font-medium">Total Submitted</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-green-600">
-              {analytics.resolution_rate_percent != null
+            <p className="text-2xl font-bold text-green-600">{analytics?.resolved_complaints || 0}</p>
+            <p className="text-xs text-gray-500 mt-1 font-medium">Resolved</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
+            <p className="text-2xl font-bold text-srec-primary">
+              {analytics?.resolution_rate_percent != null
                 ? `${Math.round(analytics.resolution_rate_percent)}%`
                 : '—'}
             </p>
-            <p className="text-sm text-gray-500 mt-1">Resolution Rate (period)</p>
+            <p className="text-xs text-gray-500 mt-1 font-medium">Resolution Rate</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {analytics.avg_resolution_time_hours != null
+              {analytics?.avg_resolution_time_hours != null
                 ? `${Math.round(analytics.avg_resolution_time_hours)}h`
                 : '—'}
             </p>
-            <p className="text-sm text-gray-500 mt-1">Avg Resolution Time</p>
+            <p className="text-xs text-gray-500 mt-1 font-medium">Avg Resolution Time</p>
           </div>
         </div>
-      )}
+
+        {/* Priority breakdown */}
+        {Object.keys(byPriority).length > 0 && (
+          <div className="mt-4 bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+            <h4 className="text-sm font-bold text-gray-700 mb-3">Priority Breakdown (all time)</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {['Critical', 'High', 'Medium', 'Low'].map(p => {
+                const pColors = {
+                  Critical: 'text-red-600 bg-red-50 border-red-100',
+                  High: 'text-orange-600 bg-orange-50 border-orange-100',
+                  Medium: 'text-amber-600 bg-amber-50 border-amber-100',
+                  Low: 'text-gray-600 bg-gray-50 border-gray-100',
+                };
+                return (
+                  <div
+                    key={p}
+                    onClick={() => navigate(`/admin/complaints?priority=${p}`)}
+                    className={`rounded-xl border px-4 py-3 text-center cursor-pointer hover:shadow-sm transition-all ${pColors[p]}`}
+                  >
+                    <p className="text-xl font-bold">{byPriority[p] || 0}</p>
+                    <p className="text-xs font-semibold mt-0.5">{p}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <ExportModal
+        isOpen={showExport}
+        onClose={() => setShowExport(false)}
+        title="Admin Executive Report"
+        sections={exportSections}
+      />
     </div>
   );
 }

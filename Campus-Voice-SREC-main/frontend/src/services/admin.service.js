@@ -44,10 +44,7 @@ const toggleStudentActive = async (rollNo, activate) => {
 
 // System Stats
 const getSystemOverview = async () => {
-    console.log('📡 API Call: GET /admin/stats/overview');
-    const response = await api('/admin/stats/overview');
-    console.log('📡 Response:', response);
-    return response;
+    return await api('/admin/stats/overview');
 };
 
 const getAnalytics = async (days = 30) => {
@@ -82,6 +79,24 @@ const moderateImage = async (complaintId, approve, reason = null) => {
     });
 };
 
+// Complaints (admin view — all complaints)
+const getAdminComplaints = async ({ status = '', priority = '', category_id = '', category_name = '', search = '', date_from = '', date_to = '', skip = 0, limit = 20 } = {}) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (status) params.append('status_filter', status);
+    if (priority) params.append('priority', priority);
+    if (category_id) params.append('category_id', category_id);
+    if (category_name) params.append('category_name', category_name);
+    if (search) params.append('search', search);
+    if (date_from) params.append('date_from', date_from);
+    if (date_to) params.append('date_to', date_to);
+    return await api(`/admin/complaints?${params}`);
+};
+
+// Escalations
+const getEscalations = async () => {
+    return await api('/admin/escalations');
+};
+
 // Health Metrics
 const getHealthMetrics = async () => {
     return await api('/admin/health/metrics');
@@ -96,9 +111,11 @@ const adminService = {
     toggleStudentActive,
     getSystemOverview,
     getAnalytics,
+    getAdminComplaints,
     bulkStatusUpdate,
     getPendingImageVerifications,
     moderateImage,
+    getEscalations,
     getHealthMetrics,
 };
 

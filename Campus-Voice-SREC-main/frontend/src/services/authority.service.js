@@ -58,6 +58,11 @@ const getStats = async () => {
     return await api('/authorities/stats');
 };
 
+// Get detailed stats for executive dashboard
+const getDetailedStats = async () => {
+    return await api('/authorities/stats/detailed');
+};
+
 // --- Notice / Broadcast endpoints ---
 
 // Create a notice (C11) — JSON body
@@ -79,6 +84,25 @@ const deactivateNotice = async (noticeId) => {
     return await api(`/authorities/notices/${noticeId}`, { method: 'DELETE' });
 };
 
+// --- Notifications (Authority/Admin) ---
+
+const getNotifications = async ({ skip = 0, limit = 20, unread_only = false } = {}) => {
+    const params = new URLSearchParams({ skip, limit, unread_only });
+    return await api(`/authorities/notifications?${params}`);
+};
+
+const markNotificationRead = async (id) => {
+    return await api(`/authorities/notifications/${id}/read`, { method: 'PUT' });
+};
+
+const markAllNotificationsRead = async () => {
+    return await api('/authorities/notifications/mark-all-read', { method: 'PUT' });
+};
+
+const deleteNotification = async (id) => {
+    return await api(`/authorities/notifications/${id}`, { method: 'DELETE' });
+};
+
 const authorityService = {
     getProfile,
     getDashboard,
@@ -89,9 +113,14 @@ const authorityService = {
     escalateComplaint,
     getEscalationHistory,
     getStats,
+    getDetailedStats,
     createNotice,
     getMyNotices,
     deactivateNotice,
+    getNotifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
 };
 
 export default authorityService;

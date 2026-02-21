@@ -47,9 +47,9 @@ export const STATUSES = [
 
 // Valid status transitions per the backend rules
 export const VALID_STATUS_TRANSITIONS = {
-    "Raised":      ["In Progress", "Spam", "Closed"],
-    "In Progress": ["Resolved", "Raised", "Closed"],
-    "Resolved":    ["Closed", "Raised"],
+    "Raised":      ["In Progress", "Resolved", "Spam"],
+    "In Progress": ["Resolved", "Spam"],
+    "Resolved":    ["Closed"],
     "Closed":      [],
     "Spam":        ["Closed"],
 };
